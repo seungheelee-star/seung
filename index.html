@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SCM 공유 작업 · 대조현황/리더활동비</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#f4f5f8;--card-bg:#fff;--border:#e7e8ee;--text:#161a2b;--text2:#666e85;--text3:#9aa1b5;
+    --primary:#3d4bd6;--primary-light:#eceeff;--success:#0ea86e;--warning:#e08a1e;--danger:#e5484d;
+    --radius:10px;--shadow:0 1px 2px rgba(20,22,45,.04),0 2px 8px rgba(20,22,45,.05);
+  }
+  body{font-family:-apple-system,BlinkMacSystemFont,'Malgun Gothic',sans-serif;background:var(--bg);color:var(--text);font-size:14px;padding:20px}
+  .wrap{max-width:1100px;margin:0 auto}
+  h1{font-size:20px;font-weight:800;margin-bottom:4px}
+  .sub{font-size:12px;color:var(--text2);margin-bottom:20px}
+  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:16px}
+  .tab{padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;color:var(--text2)}
+  .tab.active{color:var(--primary);border-bottom-color:var(--primary)}
+  .page{display:none}
+  .page.active{display:block}
+  .card{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);margin-bottom:14px}
+  .btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:12px;color:var(--text);font-weight:500}
+  .btn:hover{background:var(--bg)}
+  .btn-primary{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .btn-sm{padding:4px 9px;font-size:11px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;font-size:11px;font-weight:700;color:var(--text2);padding:8px 10px;border-bottom:1px solid var(--border);background:var(--bg);white-space:nowrap}
+  td{padding:8px 10px;border-bottom:1px solid #f1f2f6;vertical-align:middle}
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
+  .filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+  input,select,textarea{padding:6px 9px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit}
+  .memo-input{width:140px}
+  .lb-table input,.lb-table textarea{width:100%;border:none;background:transparent;font-size:12px}
+  .lb-table textarea{min-height:50px;resize:vertical}
+  .lb-table td{padding:4px 6px}
+  .status-msg{font-size:12px;color:var(--text2);margin-bottom:10px}
+  .empty{text-align:center;color:var(--text3);padding:30px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SCM 공유 작업</h1>
+  <div class="sub">대조현황 처리 · 리더활동비 입력을 사내 인원과 함께 작업하는 공간입니다.</div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="lc" onclick="switchTab('lc')">대조현황 처리</div>
+    <div class="tab" data-tab="lb" onclick="switchTab('lb')">리더활동비 입력</div>
+  </div>
+
+  <!-- 대조현황 -->
+  <div class="page active" id="page-lc">
+    <div class="card">
+      <div class="filters">
+        <button class="btn btn-primary" onclick="setLcFilter('')">전체</button>
+        <button class="btn" onclick="setLcFilter('일치')">일치</button>
+        <button class="btn" onclick="setLcFilter('누락')">누락</button>
+        <button class="btn" onclick="setLcFilter('원장초과')">원장초과</button>
+        <button class="btn" onclick="setLcFilter('금액차이')">금액차이</button>
+        <button class="btn" onclick="setLcFilter('처리됨')">처리됨</button>
+        <span style="flex:1"></span>
+        <button class="btn" onclick="loadLc()">새로고침</button>
+      </div>
+      <div class="status-msg" id="lc-status"></div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>판정</th><th>날짜</th><th>부서</th><th>카드</th><th>가맹점/거래처</th><th style="text-align:right">카드금액</th><th style="text-align:right">원장금액</th><th style="text-align:right">차액</th><th>처리</th><th>비고</th></tr></thead>
+          <tbody id="lc-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 리더활동비 -->
+  <div class="page" id="page-lb">
+    <div class="card">
+      <div class="filters">
+        <label style="font-size:12px;color:var(--text2)">연도</label>
+        <select id="lb-year" onchange="renderLb()">
+          <option value="2026">2026년</option>
+          <option value="2025">2025년</option>
+        </select>
+        <span style="flex:1"></span>
+        <button class="btn" onclick="loadLb()">새로고침</button>
+      </div>
+      <div class="status-msg">인원(명), 수동 사용액(원), 구성원 명단을 팀×월별로 직접 입력합니다. 입력 후 다른 칸을 클릭하면 자동 저장됩니다.</div>
+      <div style="overflow-x:auto">
+        <table class="lb-table">
+          <thead id="lb-thead"></thead>
+          <tbody id="lb-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== Supabase 연결 =====
+const SUPABASE_URL='https://rqkkvpugddndzgcbaaqo.supabase.co';
+const SUPABASE_KEY='sb_publishable_rD4o24OUdMM3OIZxYNKIuA_2cMY_tDV';
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+function fmt(n){ return (n||n===0)?Number(n).toLocaleString('ko-KR'):'—'; }
+
+function switchTab(t){
+  document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active',el.dataset.tab===t));
+  document.getElementById('page-lc').classList.toggle('active',t==='lc');
+  document.getElementById('page-lb').classList.toggle('active',t==='lb');
+  if(t==='lc') loadLc(); else loadLb();
+}
+
+// ===== 대조현황 =====
+let _lcRows=[], _lcProcessed={}, _lcFilter='';
+async function loadLc(){
+  document.getElementById('lc-status').textContent='불러오는 중...';
+  const {data:rows,error:e1}=await sb.from('lc_shared_rows').select('*').order('date',{ascending:false});
+  const {data:proc,error:e2}=await sb.from('lc_shared_processed').select('*');
+  if(e1||e2){ document.getElementById('lc-status').textContent='오류: '+(e1||e2).message; return; }
+  _lcRows=rows||[];
+  _lcProcessed={};
+  (proc||[]).forEach(p=>{ _lcProcessed[p.row_key]=p; });
+  document.getElementById('lc-status').textContent=_lcRows.length?`총 ${_lcRows.length}건 (최근 업로드: ${_lcRows[0]?.uploaded_at?new Date(_lcRows[0].uploaded_at).toLocaleString('ko-KR'):'-'})`:'아직 업로드된 대조현황이 없습니다. 로컬 대시보드에서 "공유서버로 올리기"를 먼저 실행해주세요.';
+  renderLc();
+}
+function setLcFilter(f){ _lcFilter=f; renderLc(); }
+function renderLc(){
+  const typeStyle={'누락':'background:#fee2e2;color:#991b1b','원장초과':'background:#dbeafe;color:#1e40af','금액차이':'background:#fef3c7;color:#92400e','일치':'background:#dcfce7;color:#166534'};
+  let rows=_lcRows.map(r=>({...r,isDone:!!_lcProcessed[r.row_key],proc:_lcProcessed[r.row_key]}));
+  if(_lcFilter==='처리됨') rows=rows.filter(r=>r.isDone);
+  else if(_lcFilter) rows=rows.filter(r=>r.type===_lcFilter&&!r.isDone);
+  else rows=rows.filter(r=>!r.isDone);
+  const tbody=document.getElementById('lc-tbody');
+  if(!rows.length){ tbody.innerHTML='<tr><td colspan="10" class="empty">해당 항목 없음</td></tr>'; return; }
+  tbody.innerHTML=rows.map(r=>{
+    const doneBtn=r.type!=='일치'?`<button class="btn btn-sm" onclick="toggleLcProcessed('${r.row_key}','${r.type}')">${r.isDone?'처리취소':'처리'}</button>`:'';
+    const memoCell=`<input class="memo-input" value="${(r.proc?.memo||'').replace(/"/g,'&quot;')}" placeholder="비고" onchange="saveLcMemo('${r.row_key}',this.value)" ${r.isDone?'':'disabled'}>`;
+    return `<tr>
+      <td><span class="badge" style="${typeStyle[r.type]||''}">${r.type}</span></td>
+      <td style="white-space:nowrap">${r.date||''}</td>
+      <td>${r.dept||''}</td>
+      <td>${r.last4||'—'}</td>
+      <td>${r.merchant||''}${r.partner?`<br><span style="font-size:11px;color:var(--text2)">${r.partner}</span>`:''}</td>
+      <td style="text-align:right">${fmt(r.tx_amount)}</td>
+      <td style="text-align:right">${fmt(r.entry_amount)}</td>
+      <td style="text-align:right;color:${r.diff>0?'var(--danger)':r.diff<0?'#3B82F6':'inherit'}">${r.type==='일치'?'0':fmt(r.diff)}</td>
+      <td>${doneBtn}</td>
+      <td>${memoCell}</td>
+    </tr>`;
+  }).join('');
+}
+async function toggleLcProcessed(rowKey,type){
+  if(_lcProcessed[rowKey]){
+    await sb.from('lc_shared_processed').delete().eq('row_key',rowKey);
+  } else {
+    const memo=prompt('비고 (확인 내용을 입력하세요)','')??'';
+    await sb.from('lc_shared_processed').upsert({row_key:rowKey,memo,processed_at:new Date().toLocaleString('ko-KR')});
+  }
+  loadLc();
+}
+async function saveLcMemo(rowKey,memo){
+  await sb.from('lc_shared_processed').update({memo}).eq('row_key',rowKey);
+}
+
+// ===== 리더활동비 =====
+const LB_TEAMS=['사업부','마케팅챕터','크리에이티브챕터','PBO'];
+let _lbData={};
+async function loadLb(){
+  const {data,error}=await sb.from('lb_shared_monthly').select('*');
+  if(error){ alert('오류: '+error.message); return; }
+  _lbData={};
+  (data||[]).forEach(d=>{ if(!_lbData[d.team]) _lbData[d.team]={}; _lbData[d.team][d.month]=d; });
+  renderLb();
+}
+function lbMonths(){
+  const year=document.getElementById('lb-year').value;
+  const list=[];
+  if(year==='2026') list.push('2025-12');
+  for(let m=1;m<=12;m++) list.push(`${year}-${String(m).padStart(2,'0')}`);
+  return list;
+}
+function renderLb(){
+  const months=lbMonths();
+  const thead=document.getElementById('lb-thead');
+  const tbody=document.getElementById('lb-tbody');
+  thead.innerHTML=`<tr><th>팀</th><th>항목</th>${months.map(m=>`<th style="text-align:center">${m.slice(2).replace('-','.')}</th>`).join('')}</tr>`;
+  let html='';
+  LB_TEAMS.forEach(team=>{
+    const rowsDef=[
+      {key:'headcount',label:'인원(명)',type:'number'},
+      {key:'expenses_manual',label:'사용액(원)',type:'number'},
+      {key:'roster',label:'구성원 명단',type:'textarea'}
+    ];
+    rowsDef.forEach((rd,ri)=>{
+      html+=`<tr>
+        ${ri===0?`<td rowspan="3" style="font-weight:700;vertical-align:middle">${team}</td>`:''}
+        <td style="color:var(--text2);white-space:nowrap">${rd.label}</td>
+        ${months.map(m=>{
+          const rec=(_lbData[team]||{})[m]||{};
+          const v=rec[rd.key]||'';
+          if(rd.type==='textarea') return `<td><textarea onchange="saveLbCell('${team}','${m}','${rd.key}',this.value)">${v}</textarea></td>`;
+          return `<td><input type="number" value="${v}" style="text-align:right" onchange="saveLbCell('${team}','${m}','${rd.key}',this.value)"></td>`;
+        }).join('')}
+      </tr>`;
+    });
+  });
+  tbody.innerHTML=html;
+}
+async function saveLbCell(team,month,key,value){
+  const payload={team,month};
+  payload[key]=key==='roster'?value:(parseInt(value)||0);
+  const {error}=await sb.from('lb_shared_monthly').upsert(payload,{onConflict:'team,month'});
+  if(error) alert('저장 실패: '+error.message);
+  else {
+    if(!_lbData[team]) _lbData[team]={};
+    if(!_lbData[team][month]) _lbData[team][month]={};
+    _lbData[team][month][key]=payload[key];
+  }
+}
+
+loadLc();
+</script>
+</body>
+</html>
