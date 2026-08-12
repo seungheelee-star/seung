@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>법인카드·경비 관리</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   :root{
@@ -48,8 +49,32 @@
   <div class="tabs">
     <div class="tab active" data-tab="cards" onclick="switchTab('cards')">카드별 현황</div>
     <div class="tab" data-tab="tx" onclick="switchTab('tx')">이용내역</div>
+    <div class="tab" data-tab="monthly" onclick="switchTab('monthly')">부서별 지출현황</div>
     <div class="tab" data-tab="lc" onclick="switchTab('lc')">대조현황 처리</div>
     <div class="tab" data-tab="lb" onclick="switchTab('lb')">리더활동비 입력</div>
+  </div>
+
+  <!-- 부서별 지출현황 -->
+  <div class="page" id="page-monthly">
+    <div class="card">
+      <div class="filters">
+        <select id="monthly-card-filter" onchange="renderMonthly()">
+          <option value="">전체 카드</option>
+        </select>
+        <span style="flex:1"></span>
+        <button class="btn" onclick="loadMonthly()">새로고침</button>
+      </div>
+      <div class="status-msg" id="monthly-status"></div>
+      <div style="position:relative;width:100%;height:280px;margin-bottom:16px">
+        <canvas id="monthlyChart"></canvas>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead id="monthly-thead"></thead>
+          <tbody id="monthly-tbody"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <!-- 카드별 현황 -->
@@ -144,9 +169,68 @@ function switchTab(t){
   document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active',el.dataset.tab===t));
   document.getElementById('page-cards').classList.toggle('active',t==='cards');
   document.getElementById('page-tx').classList.toggle('active',t==='tx');
+  document.getElementById('page-monthly').classList.toggle('active',t==='monthly');
   document.getElementById('page-lc').classList.toggle('active',t==='lc');
   document.getElementById('page-lb').classList.toggle('active',t==='lb');
-  if(t==='cards') loadCards(); else if(t==='tx') loadTx(); else if(t==='lc') loadLc(); else loadLb();
+  if(t==='cards') loadCards();
+  else if(t==='tx') loadTx();
+  else if(t==='monthly') loadMonthly();
+  else if(t==='lc') loadLc();
+  else loadLb();
+}
+
+// ===== 부서별 지출현황 (카드별 월별 추이) =====
+let _moCards=[], _moTxAll=[], _monthlyChartInst=null;
+async function loadMonthly(){
+  document.getElementById('monthly-status').textContent='불러오는 중...';
+  const {data:cards,error:e1}=await sb.from('cards_shared').select('*');
+  if(e1){ document.getElementById('monthly-status').textContent='오류: '+e1.message; return; }
+  let all=[], from=0, pageSize=1000;
+  while(true){
+    const {data,error}=await sb.from('tx_shared').select('date,last4,amount').range(from,from+pageSize-1);
+    if(error){ document.getElementById('monthly-status').textContent='오류: '+error.message; return; }
+    all=all.concat(data||[]);
+    if(!data||data.length<pageSize) break;
+    from+=pageSize;
+  }
+  _moCards=cards||[];
+  _moTxAll=all;
+  const sel=document.getElementById('monthly-card-filter');
+  const cur=sel.value;
+  sel.innerHTML='<option value="">전체 카드</option>'+_moCards.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  if(_moCards.some(c=>c.id===cur)) sel.value=cur;
+  document.getElementById('monthly-status').textContent=`카드 ${_moCards.length}건 · 이용내역 ${_moTxAll.length}건`;
+  renderMonthly();
+}
+function renderMonthly(){
+  const cardId=document.getElementById('monthly-card-filter').value;
+  const now=new Date();
+  const months=[];
+  for(let i=0;i<=5;i++){
+    const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+    months.push({label:`${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}`,key:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`});
+  }
+  const colors=['#3d4bd6','#7c3aed','#0ea86e','#e08a1e','#e5484d','#0891b2','#be185d','#65a30d'];
+  const cardSum=(c,mo)=>_moTxAll.filter(t=>t.last4===c.last4&&(t.date||'').startsWith(mo.key)).reduce((s,t)=>s+(t.amount||0),0);
+  const moSum=(mo)=>_moTxAll.filter(t=>(t.date||'').startsWith(mo.key)).reduce((s,t)=>s+(t.amount||0),0);
+
+  if(_monthlyChartInst) _monthlyChartInst.destroy();
+  const card=cardId?_moCards.find(c=>c.id===cardId):null;
+  const data=months.map(m=>card?cardSum(card,m):moSum(m));
+  _monthlyChartInst=new Chart(document.getElementById('monthlyChart'),{
+    type:'doughnut',
+    data:{labels:months.map(m=>m.label),datasets:[{data,backgroundColor:colors.slice(0,months.length).map(c=>c+'cc'),borderColor:colors.slice(0,months.length),borderWidth:1}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'right',labels:{boxWidth:12,font:{size:11}}}}}
+  });
+
+  const thead=document.getElementById('monthly-thead');
+  thead.innerHTML=`<tr><th>카드명</th>${months.map(m=>`<th>${m.label}</th>`).join('')}<th>합계</th></tr>`;
+  const filterCards=cardId?_moCards.filter(c=>c.id===cardId):_moCards;
+  document.getElementById('monthly-tbody').innerHTML=filterCards.map(c=>{
+    let total=0;
+    const cells=months.map(m=>{ const v=cardSum(c,m); total+=v; return `<td style="text-align:right">${fmt(v)}</td>`; }).join('');
+    return `<tr><td style="font-weight:600">${c.name}</td>${cells}<td style="text-align:right;font-weight:700">${fmt(total)}</td></tr>`;
+  }).join('');
 }
 
 // ===== 카드별 현황 =====
