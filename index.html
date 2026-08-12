@@ -46,12 +46,34 @@
   <div class="sub">대조현황 처리 · 리더활동비 입력을 사내 인원과 함께 작업하는 공간입니다.</div>
 
   <div class="tabs">
-    <div class="tab active" data-tab="lc" onclick="switchTab('lc')">대조현황 처리</div>
+    <div class="tab active" data-tab="tx" onclick="switchTab('tx')">이용내역</div>
+    <div class="tab" data-tab="lc" onclick="switchTab('lc')">대조현황 처리</div>
     <div class="tab" data-tab="lb" onclick="switchTab('lb')">리더활동비 입력</div>
   </div>
 
+  <!-- 이용내역 -->
+  <div class="page active" id="page-tx">
+    <div class="card">
+      <div class="filters">
+        <input type="text" id="tx-search" placeholder="가맹점 검색" oninput="renderTx()">
+        <input type="date" id="tx-from" onchange="renderTx()">
+        <span style="color:var(--text2);font-size:12px">~</span>
+        <input type="date" id="tx-to" onchange="renderTx()">
+        <span style="flex:1"></span>
+        <button class="btn" onclick="loadTx()">새로고침</button>
+      </div>
+      <div class="status-msg" id="tx-status"></div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>날짜</th><th>카드</th><th>뒷4자리</th><th>가맹점</th><th style="text-align:right">금액</th><th>메모</th></tr></thead>
+          <tbody id="tx-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- 대조현황 -->
-  <div class="page active" id="page-lc">
+  <div class="page" id="page-lc">
     <div class="card">
       <div class="filters">
         <button class="btn btn-primary" onclick="setLcFilter('')">전체</button>
@@ -106,9 +128,40 @@ function fmt(n){ return (n||n===0)?Number(n).toLocaleString('ko-KR'):'—'; }
 
 function switchTab(t){
   document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active',el.dataset.tab===t));
+  document.getElementById('page-tx').classList.toggle('active',t==='tx');
   document.getElementById('page-lc').classList.toggle('active',t==='lc');
   document.getElementById('page-lb').classList.toggle('active',t==='lb');
-  if(t==='lc') loadLc(); else loadLb();
+  if(t==='tx') loadTx(); else if(t==='lc') loadLc(); else loadLb();
+}
+
+// ===== 이용내역 =====
+let _txRows=[];
+async function loadTx(){
+  document.getElementById('tx-status').textContent='불러오는 중...';
+  const {data,error}=await sb.from('tx_shared').select('*').order('date',{ascending:false}).limit(2000);
+  if(error){ document.getElementById('tx-status').textContent='오류: '+error.message; return; }
+  _txRows=data||[];
+  document.getElementById('tx-status').textContent=`총 ${_txRows.length}건`;
+  renderTx();
+}
+function renderTx(){
+  const q=(document.getElementById('tx-search').value||'').trim();
+  const from=document.getElementById('tx-from').value;
+  const to=document.getElementById('tx-to').value;
+  let rows=_txRows;
+  if(q) rows=rows.filter(r=>(r.merchant||'').includes(q));
+  if(from) rows=rows.filter(r=>(r.date||'')>=from);
+  if(to) rows=rows.filter(r=>(r.date||'')<=to);
+  const tbody=document.getElementById('tx-tbody');
+  if(!rows.length){ tbody.innerHTML='<tr><td colspan="6" class="empty">데이터 없음</td></tr>'; return; }
+  tbody.innerHTML=rows.map(r=>`<tr>
+    <td style="white-space:nowrap">${(r.date||'').replace(/-/g,'.')}</td>
+    <td>${r.card_name||''}</td>
+    <td>${r.last4||'—'}</td>
+    <td>${r.merchant||''}</td>
+    <td style="text-align:right">${fmt(r.amount)}</td>
+    <td style="font-size:12px;color:var(--text2)">${r.memo||''}</td>
+  </tr>`).join('');
 }
 
 // ===== 대조현황 =====
@@ -219,7 +272,7 @@ async function saveLbCell(team,month,key,value){
   }
 }
 
-loadLc();
+loadTx();
 </script>
 </body>
 </html>
