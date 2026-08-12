@@ -6,6 +6,7 @@
 <title>법인카드·경비 관리</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
@@ -59,6 +60,9 @@
   .lb-table textarea{min-height:50px;resize:vertical}
   .lb-table td{padding:4px 6px}
   .status-msg{font-size:12px;color:var(--text2);margin-bottom:10px}
+  .lb-subtab{padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;color:var(--text2);margin-bottom:-1px}
+  .lb-subtab:hover{color:var(--text)}
+  .lb-subtab.active{color:var(--primary);border-bottom-color:var(--primary)}
   .empty{text-align:center;color:var(--text3);padding:30px}
   @media(max-width:768px){
     body{flex-direction:column}
@@ -83,6 +87,7 @@
     <div class="tab" data-tab="ledger" onclick="switchTab('ledger')">계정별원장</div>
     <div class="tab" data-tab="lc" onclick="switchTab('lc')">대조현황 처리</div>
     <div class="tab" data-tab="lb" onclick="switchTab('lb')">리더활동비 입력</div>
+    <div class="tab" data-tab="upload" onclick="switchTab('upload')">엑셀 업로드</div>
   </div>
 </nav>
 <div id="main">
@@ -195,6 +200,7 @@
         <span style="color:var(--text2);font-size:12px">~</span>
         <input type="date" id="tx-to" onchange="renderTx()">
         <span style="flex:1"></span>
+        <button class="btn btn-primary" id="gowid-sync-btn" onclick="syncGowid()">🔄 고위드 동기화</button>
         <button class="btn" onclick="loadTx()">새로고침</button>
       </div>
       <div class="status-msg" id="tx-status"></div>
@@ -232,23 +238,58 @@
 
   <!-- 리더활동비 -->
   <div class="page" id="page-lb">
-    <div class="card">
-      <div class="filters">
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:2px;padding:14px 16px 0;border-bottom:1px solid var(--border)">
+        <div class="lb-subtab active" data-lbtab="인원입력" onclick="lbSetTab('인원입력')">인원입력</div>
+        <div class="lb-subtab" data-lbtab="사용액입력" onclick="lbSetTab('사용액입력')">사용액입력</div>
+        <div class="lb-subtab" data-lbtab="월별정산" onclick="lbSetTab('월별정산')">월별정산</div>
+        <div class="lb-subtab" data-lbtab="이월현황" onclick="lbSetTab('이월현황')">이월현황</div>
+        <span style="flex:1"></span>
         <label style="font-size:12px;color:var(--text2)">연도</label>
         <select id="lb-year" onchange="renderLb()">
           <option value="2026">2026년</option>
           <option value="2025">2025년</option>
         </select>
-        <span style="flex:1"></span>
         <button class="btn" onclick="loadLb()">새로고침</button>
       </div>
-      <div class="status-msg">인원(명), 수동 사용액(원), 구성원 명단을 팀×월별로 직접 입력합니다. 입력 후 다른 칸을 클릭하면 자동 저장됩니다.</div>
-      <div style="overflow-x:auto">
-        <table class="lb-table">
-          <thead id="lb-thead"></thead>
-          <tbody id="lb-tbody"></tbody>
-        </table>
+      <div style="padding:14px 16px">
+        <div class="status-msg">예산 5만원/인/월 · 분기 내 1개월만 잔액 이월 가능. 입력 후 다른 칸을 클릭하면 자동 저장됩니다.</div>
+        <div style="overflow-x:auto">
+          <table class="lb-table">
+            <thead id="lb-thead"></thead>
+            <tbody id="lb-tbody"></tbody>
+          </table>
+        </div>
       </div>
+    </div>
+  </div>
+
+  <!-- 엑셀 업로드 -->
+  <div class="page" id="page-upload">
+    <div class="card">
+      <div class="setting-label" style="font-weight:700;margin-bottom:10px">롯데카드 승인내역</div>
+      <input type="file" id="file-lotte" accept=".xlsx,.xls,.csv" onchange="handleUploadWeb(event,'lotte')">
+      <div id="res-lotte" class="status-msg"></div>
+    </div>
+    <div class="card">
+      <div class="setting-label" style="font-weight:700;margin-bottom:10px">신한카드 승인내역</div>
+      <input type="file" id="file-shinhan" accept=".xlsx,.xls,.csv" onchange="handleUploadWeb(event,'shinhan')">
+      <div id="res-shinhan" class="status-msg"></div>
+    </div>
+    <div class="card">
+      <div class="setting-label" style="font-weight:700;margin-bottom:10px">법인카드이용대금명세서</div>
+      <input type="file" id="file-cardall" accept=".xlsx,.xls,.csv" onchange="handleUploadWeb(event,'card_all')">
+      <div id="res-card_all" class="status-msg"></div>
+    </div>
+    <div class="card">
+      <div class="setting-label" style="font-weight:700;margin-bottom:10px">계정별원장</div>
+      <input type="file" id="file-ledger" accept=".xlsx,.xls,.csv" onchange="handleUploadWeb(event,'ledger')">
+      <div id="res-ledger" class="status-msg"></div>
+    </div>
+    <div class="card">
+      <div class="setting-label" style="font-weight:700;margin-bottom:10px">위하고(더존ERP)</div>
+      <input type="file" id="file-wihago-up" accept=".xlsx,.xls,.csv" onchange="handleUploadWeb(event,'wihago')">
+      <div id="res-wihago" class="status-msg"></div>
     </div>
   </div>
 </div>
@@ -261,6 +302,339 @@ const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
 function fmt(n){ return (n||n===0)?Number(n).toLocaleString('ko-KR'):'—'; }
 
+// ===== 고위드 API 직접 연동 =====
+const GAS_PROXY='https://script.google.com/macros/s/AKfycbyNd8r2v7ZxURA3eHQtGlAtHVciGGb33jiNqE_QLpeIZ1NA0KKWXdrFpsskKu-W4z1t/exec';
+async function gasFetch(path, qs=''){
+  const bust=`_cb=${Date.now()}`;
+  const fullQs=(qs?qs+'&':'')+bust;
+  const url=`${GAS_PROXY}?path=${encodeURIComponent(path)}&qs=${encodeURIComponent(fullQs)}&${bust}`;
+  const res=await fetch(url,{cache:'no-store'});
+  if(!res.ok) throw new Error(`GAS 오류 ${res.status}`);
+  return await res.json();
+}
+function extractLast4FromShortCard(s){ if(!s) return ''; const m=String(s).match(/(\d{4})$/); return m?m[1]:''; }
+function gowidDateToISO(d){ if(!d||d.length!==8) return ''; return `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`; }
+function gowidDatetime(d,t){ const date=gowidDateToISO(d); if(!date) return ''; if(!t||t.length<6) return date; return `${date}T${t.slice(0,2)}:${t.slice(2,4)}:${t.slice(4,6)}`; }
+
+async function syncGowid(){
+  const btn=document.getElementById('gowid-sync-btn');
+  btn.disabled=true; const orig=btn.textContent; btn.textContent='동기화 중...';
+  document.getElementById('tx-status').textContent='⏳ 고위드 데이터 조회 중...';
+  try{
+    const year=new Date().getFullYear();
+    const dateQs=`startDate=${year}0101&endDate=${year}1231`;
+    const first=await gasFetch('/v2/expenses',`page=0&size=100&${dateQs}`);
+    const body=first.body||first;
+    if(body?.result?.code && body.result.code!==20000000) throw new Error('Gowid 오류 코드: '+body.result.code);
+    const totalPages=body?.data?.totalPages||1;
+    let allItems=[...(body?.data?.content||[])];
+    for(let p=1;p<totalPages;p++){
+      btn.textContent=`동기화 중... (${p}/${totalPages-1})`;
+      const r=await gasFetch('/v2/expenses',`page=${p}&size=100&${dateQs}`);
+      const rb=r.body||r;
+      allItems.push(...(rb?.data?.content||[]));
+    }
+    const {data:cards}=await sb.from('cards_shared').select('*');
+    const payload=allItems.map(item=>{
+      const last4=extractLast4FromShortCard(item.shortCardNumber);
+      const matchCard=(cards||[]).find(c=>c.last4===last4);
+      return {
+        id:`gowid_${item.expenseId}`, source:'gowid',
+        card_name: matchCard?matchCard.name:(item.cardAlias||(item.shortCardNumber?`신한 ${last4}`:'')),
+        last4, date:gowidDateToISO(item.expenseDate), datetime:gowidDatetime(item.expenseDate,item.expenseTime),
+        merchant:item.storeName||'', amount:item.krwAmount||item.useAmount||0,
+        category:'', memo:item.memo||''
+      };
+    });
+    for(let i=0;i<payload.length;i+=500){
+      const {error}=await sb.from('tx_shared').upsert(payload.slice(i,i+500),{onConflict:'id'});
+      if(error) throw error;
+    }
+    document.getElementById('tx-status').textContent=`✅ 고위드 동기화 완료: ${payload.length}건`;
+    loadTx();
+  }catch(e){
+    document.getElementById('tx-status').textContent='⚠️ 오류: '+e.message;
+    alert('동기화 실패: '+e.message);
+  }finally{
+    btn.disabled=false; btn.textContent=orig;
+  }
+}
+
+// ===== 엑셀 업로드 (파싱 헬퍼) =====
+function getColW(row, headers, ...keywords){
+  const norms=keywords.map(k=>k.replace(/[\s\(\)（）]/g,'').toLowerCase());
+  for(const h of headers){
+    const nh=String(h).replace(/[\s\(\)（）]/g,'').toLowerCase();
+    if(!nh) continue;
+    for(const n of norms){
+      if(nh===n||nh.includes(n)||(n.length>=2&&nh.length>=2&&n.includes(nh))){
+        const v=row[h];
+        if(v!==undefined&&v!==''&&v!==null) return v;
+      }
+    }
+  }
+  return '';
+}
+function localDateStrW(d){ if(isNaN(d)) return ''; const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
+function excelDateToStrW(v){
+  if(v===''||v===undefined||v===null) return '';
+  if(v instanceof Date) return localDateStrW(v);
+  if(typeof v==='number'&&v>10000){ const d=new Date(Math.round((v-25569)*86400*1000)); return localDateStrW(d); }
+  const s=String(v).trim();
+  const m1=s.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+  if(m1) return `${m1[1]}-${m1[2].padStart(2,'0')}-${m1[3].padStart(2,'0')}`;
+  const s2=s.replace(/\D/g,'');
+  if(s2.length===8) return `${s2.slice(0,4)}-${s2.slice(4,6)}-${s2.slice(6,8)}`;
+  return '';
+}
+function parseTimeW(v){
+  if(v===''||v===undefined||v===null) return '00:00:00';
+  if(v instanceof Date) return `${String(v.getHours()).padStart(2,'0')}:${String(v.getMinutes()).padStart(2,'0')}:${String(v.getSeconds()).padStart(2,'0')}`;
+  if(typeof v==='number'){ const frac=v%1; const totalSec=Math.round(frac*86400); const h=Math.floor(totalSec/3600),m=Math.floor((totalSec%3600)/60),s2=totalSec%60; return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s2).padStart(2,'0')}`; }
+  const s=String(v).replace(/\D/g,'').padEnd(6,'0');
+  return `${s.slice(0,2)}:${s.slice(2,4)}:${s.slice(4,6)}`;
+}
+function parseAmtW(v){
+  if(v===''||v===undefined||v===null) return 0;
+  if(typeof v==='number') return Math.round(v);
+  const s=String(v).trim();
+  const sign=s.startsWith('-')?-1:1;
+  return sign*(parseInt(s.replace(/[^0-9]/g,''))||0);
+}
+function extractLast4W(partner){ const m=String(partner||'').match(/\((\d{4})\)/); return m?m[1]:''; }
+function extractIssuerFromPartnerW(partner){
+  const s=String(partner||'');
+  if(s.includes('롯데카드')) return '롯데';
+  if(s.includes('신한카드')) return '신한';
+  return '';
+}
+function parseLedgerDateW(dateStr, year){
+  if(dateStr instanceof Date){ const y=dateStr.getFullYear()||year, mo=String(dateStr.getMonth()+1).padStart(2,'0'), d=String(dateStr.getDate()).padStart(2,'0'); return `${y}-${mo}-${d}`; }
+  const s=String(dateStr||'').trim();
+  if(!s) return '';
+  if(/^\d{5}$/.test(s)){ const d=new Date(Math.round((Number(s)-25569)*86400000)); return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`; }
+  const m=s.match(/^(\d{1,2})-(\d{1,2})$/);
+  if(m) return `${year}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+  const m2=s.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+  if(m2) return `${m2[1]}-${m2[2].padStart(2,'0')}-${m2[3].padStart(2,'0')}`;
+  const d2=new Date(s);
+  if(!isNaN(d2)) return `${d2.getFullYear()}-${String(d2.getMonth()+1).padStart(2,'0')}-${String(d2.getDate()).padStart(2,'0')}`;
+  return '';
+}
+function detectHeaderRow(rawArr, keywords){
+  let headerIdx=0,bestScore=0;
+  for(let i=0;i<Math.min(15,rawArr.length);i++){
+    const score=rawArr[i].reduce((s,c)=>{ const cs=String(c); return s+keywords.filter(kw=>cs.includes(kw)).length; },0);
+    if(score>bestScore){bestScore=score;headerIdx=i;}
+  }
+  return {headerIdx,bestScore};
+}
+function sheetToRowsW(rawArr, headerIdx){
+  const headers=rawArr[headerIdx].map(h=>String(h).trim());
+  const dataRows=rawArr.slice(headerIdx+1).filter(r=>{
+    const first=String(r[0]||'').trim();
+    if(first==='합계'||first==='소계') return false;
+    return r.some(c=>String(c).trim()&&String(c).trim()!=='0');
+  });
+  return {headers, rows: dataRows.map(r=>{ const o={}; headers.forEach((h,i)=>{o[h]=r[i]===undefined?'':r[i];}); return o; })};
+}
+
+async function handleUploadWeb(event,type){
+  const file=event.target.files[0];
+  if(!file) return;
+  const resEl=document.getElementById('res-'+type);
+  resEl.textContent='⏳ 처리 중...';
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(new Uint8Array(buf),{type:'array',cellDates:true});
+    let result;
+    if(type==='lotte') result=await parseLotteW(wb);
+    else if(type==='shinhan') result=await parseShinhanW(wb);
+    else if(type==='card_all') result=await parseCardAllW(wb);
+    else if(type==='ledger') result=await parseLedgerW(wb,file.name);
+    else if(type==='wihago') result=await parseWihagoW(wb);
+    resEl.innerHTML=`✅ ${result.count}건 반영 완료`;
+    // 관련 탭이 열려있으면 새로고침
+    if(type==='lotte'||type==='shinhan') loadTx();
+    if(type==='card_all') loadCardStmt();
+    if(type==='ledger') loadLedger();
+    if(type==='wihago') loadWihago();
+  }catch(e){
+    resEl.innerHTML=`⚠️ 오류: ${e.message}`;
+    console.error(e);
+  }
+  event.target.value='';
+}
+
+async function parseLotteW(wb){
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rawArr=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+  const {headerIdx}=detectHeaderRow(rawArr,['카드번호','매입일자','매입시간','가맹점명','매입금액','승인번호']);
+  const {headers,rows}=sheetToRowsW(rawArr,headerIdx);
+  const {data:cards}=await sb.from('cards_shared').select('*').eq('issuer','롯데');
+  const payload=[];
+  rows.forEach(row=>{
+    const rawCardNo=String(getColW(row,headers,'카드번호')||'').replace(/\D/g,'');
+    const last4=rawCardNo.length>=4?rawCardNo.slice(-4):'';
+    const cardMatch=(cards||[]).find(c=>c.last4===last4)||(cards||[])[0];
+    const rawDate=getColW(row,headers,'매입일자','승인일자','거래일자','승인일');
+    const dateStr=excelDateToStrW(rawDate);
+    if(!dateStr) return;
+    const timeVal=getColW(row,headers,'매입시간','승인시간');
+    const amt=parseAmtW(getColW(row,headers,'매입금액','승인금액(원화)','승인금액','청구금액','원화금액'));
+    const approvalNo=String(getColW(row,headers,'승인번호')||'').trim();
+    const id='lotte_'+(approvalNo?approvalNo:`${last4}_${dateStr}_${amt}_${Math.random().toString(36).slice(2,6)}`);
+    payload.push({
+      id, source:'upload', card_name:cardMatch?cardMatch.name:`롯데 ${last4}`, last4,
+      date:dateStr, datetime:`${dateStr}T${parseTimeW(timeVal)}`,
+      merchant:String(getColW(row,headers,'가맹점명','상호명','점포명')||'').trim(),
+      amount:amt, category:String(getColW(row,headers,'가맹점업종','업종명','업종')||'').trim(), memo:''
+    });
+  });
+  for(let i=0;i<payload.length;i+=500){
+    const {error}=await sb.from('tx_shared').upsert(payload.slice(i,i+500),{onConflict:'id'});
+    if(error) throw error;
+  }
+  return {count:payload.length};
+}
+
+async function parseShinhanW(wb){
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rawArr=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+  const {headerIdx}=detectHeaderRow(rawArr,['카드번호','사용구분','승인번호','승인일자','승인시간','승인금액(원화)','가맹점명']);
+  const {headers,rows}=sheetToRowsW(rawArr,headerIdx);
+  const {data:cards}=await sb.from('cards_shared').select('*');
+  const payload=[];
+  rows.forEach(row=>{
+    const cardNum=String(getColW(row,headers,'카드번호')||'');
+    const last4=cardNum.replace(/[\s\-\*]/g,'').slice(-4)||'';
+    const rawDate=getColW(row,headers,'승인일자','이용일자','거래일자');
+    const dateStr=excelDateToStrW(rawDate);
+    if(!dateStr) return;
+    const timeVal=getColW(row,headers,'승인시간','이용시간');
+    const amt=parseAmtW(getColW(row,headers,'승인금액(원화)','승인금액','이용금액'));
+    const approvalNo=String(getColW(row,headers,'승인번호')||'').trim();
+    const cardMatch=(cards||[]).find(c=>c.last4===last4);
+    const id='shinhan_'+(approvalNo?approvalNo:`${last4}_${dateStr}_${amt}_${Math.random().toString(36).slice(2,6)}`);
+    payload.push({
+      id, source:'upload', card_name:cardMatch?cardMatch.name:`신한 ${last4}`, last4,
+      date:dateStr, datetime:`${dateStr}T${parseTimeW(timeVal)}`,
+      merchant:String(getColW(row,headers,'가맹점명')||'').trim(),
+      amount:amt, category:String(getColW(row,headers,'가맹점업종명','업종명','업종')||'').trim(), memo:''
+    });
+  });
+  for(let i=0;i<payload.length;i+=500){
+    const {error}=await sb.from('tx_shared').upsert(payload.slice(i,i+500),{onConflict:'id'});
+    if(error) throw error;
+  }
+  return {count:payload.length};
+}
+
+async function parseCardAllW(wb){
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rawArr=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+  const {headerIdx}=detectHeaderRow(rawArr,['카드번호','승인일자','승인금액','사용구분']);
+  const {headers,rows}=sheetToRowsW(rawArr,headerIdx);
+  const {data:cards}=await sb.from('cards_shared').select('*');
+  const payload=[];
+  rows.forEach(row=>{
+    const cardNum=String(getColW(row,headers,'카드번호')||'').replace(/[\s\-\*]/g,'');
+    const last4=cardNum.slice(-4);
+    if(!last4) return;
+    const rawDate=String(getColW(row,headers,'승인일자')||'').trim();
+    const dm=rawDate.match(/(\d{4})[.\-\/](\d{2})[.\-\/](\d{2})/);
+    if(!dm) return;
+    const dateStr=`${dm[1]}-${dm[2]}-${dm[3]}`;
+    const timeVal=String(getColW(row,headers,'승인시간')||'');
+    const rawAmt=String(getColW(row,headers,'승인금액(원화)','승인금액')||'0').replace(/[,\s]/g,'');
+    const amt=parseInt(rawAmt)||0;
+    const region=String(getColW(row,headers,'사용구분')||'국내').trim();
+    const matchCard=(cards||[]).find(c=>c.last4===last4);
+    const approvalNo=String(getColW(row,headers,'승인번호')||'').trim();
+    const id='cs_'+(approvalNo?approvalNo+'_'+last4:`${last4}_${dateStr}_${amt}_${Math.random().toString(36).slice(2,6)}`);
+    payload.push({
+      id, card_name:matchCard?matchCard.name:`(${last4})`, last4,
+      date:dateStr, datetime:`${dateStr}T${parseTimeW(timeVal)}`,
+      merchant:String(getColW(row,headers,'가맹점명')||'').trim(),
+      approval_no:approvalNo, amount:amt, is_foreign:region==='해외', region
+    });
+  });
+  for(let i=0;i<payload.length;i+=500){
+    const {error}=await sb.from('card_stmt_shared').upsert(payload.slice(i,i+500),{onConflict:'id'});
+    if(error) throw error;
+  }
+  return {count:payload.length};
+}
+
+async function parseLedgerW(wb, fname){
+  let totalCount=0;
+  const ym=fname.match(/20(\d{2})/);
+  const year=ym?parseInt('20'+ym[1]):new Date().getFullYear();
+  for(const sheetName of wb.SheetNames){
+    let accountType='미지급금';
+    if(sheetName.includes('보통예금')||sheetName.includes('10300')) accountType='보통예금';
+    const ws=wb.Sheets[sheetName];
+    const rawArr=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+    const {headerIdx,bestScore}=detectHeaderRow(rawArr,['일자','날짜','적요','거래처','차변','대변','전표번호','부서명']);
+    if(bestScore===0) continue;
+    const {headers,rows}=sheetToRowsW(rawArr,headerIdx);
+    const payload=[];
+    rows.forEach(row=>{
+      const dateRaw=getColW(row,headers,'일자','날짜','날','date')||'';
+      if(!dateRaw) return;
+      const partner=String(getColW(row,headers,'거래처','거래','처')||'').trim();
+      const partnerNorm=partner.replace(/（/g,'(').replace(/）/g,')');
+      const last4=extractLast4W(partnerNorm)||extractLast4W(partner);
+      if(accountType==='보통예금' && !partnerNorm.includes('신한은행(670)')) return;
+      if(accountType!=='보통예금' && !last4) return;
+      const desc=String(getColW(row,headers,'적요','요','내역')||'').trim();
+      const debit=parseAmtW(getColW(row,headers,'차변','차')||'0');
+      const credit=parseAmtW(getColW(row,headers,'대변','대')||'0');
+      const voucherNo=String(getColW(row,headers,'전표번호','전표')||'').trim();
+      const dept=String(getColW(row,headers,'부서명','부서')||'').trim();
+      const date=parseLedgerDateW(dateRaw,year);
+      if(!date) return;
+      const issuer=extractIssuerFromPartnerW(partner);
+      const id='ld_'+(voucherNo?voucherNo+'_'+date+'_'+credit:`${date}_${partner}_${credit}_${debit}_${Math.random().toString(36).slice(2,6)}`);
+      payload.push({id,date,desc_text:desc,partner,last4,issuer,debit,credit,voucher_no:voucherNo,dept,account_type:accountType});
+    });
+    for(let i=0;i<payload.length;i+=500){
+      const {error}=await sb.from('ledger_shared').upsert(payload.slice(i,i+500),{onConflict:'id'});
+      if(error) throw error;
+    }
+    totalCount+=payload.length;
+  }
+  return {count:totalCount};
+}
+
+async function parseWihagoW(wb){
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rawArr=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+  const {headerIdx}=detectHeaderRow(rawArr,['사용자','지출내용','거래처','사용금액','상태','지출일시','요청일자','카드정보','소속']);
+  const {headers,rows}=sheetToRowsW(rawArr,headerIdx);
+  const payload=[];
+  rows.forEach(row=>{
+    const user=String(getColW(row,headers,'사용자')||'').trim();
+    const dept=String(getColW(row,headers,'소속')||'').trim();
+    const content=String(getColW(row,headers,'지출내용')||'').trim();
+    const category=String(getColW(row,headers,'용도')||'').trim();
+    const partner=String(getColW(row,headers,'거래처')||'').trim();
+    const month=String(getColW(row,headers,'귀속월')||'').trim();
+    const datetimeRaw=String(getColW(row,headers,'지출일시','지출일자')||'').trim();
+    const date=excelDateToStrW(datetimeRaw)||parseLedgerDateW(datetimeRaw,new Date().getFullYear());
+    const amount=parseAmtW(getColW(row,headers,'사용금액','금액'));
+    const status=String(getColW(row,headers,'상태')||'').trim();
+    if(!user&&!content&&!amount) return;
+    const id='wh_'+(user+'_'+datetimeRaw+'_'+amount+'_'+content).replace(/\s+/g,'').slice(0,80)+'_'+Math.random().toString(36).slice(2,6);
+    payload.push({id,user_name:user,dept,content,category,partner,month,date,amount,status});
+  });
+  for(let i=0;i<payload.length;i+=500){
+    const {error}=await sb.from('wihago_shared').upsert(payload.slice(i,i+500),{onConflict:'id'});
+    if(error) throw error;
+  }
+  return {count:payload.length};
+}
+
 function switchTab(t){
   document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active',el.dataset.tab===t));
   document.getElementById('page-cards').classList.toggle('active',t==='cards');
@@ -271,6 +645,7 @@ function switchTab(t){
   document.getElementById('page-ledger').classList.toggle('active',t==='ledger');
   document.getElementById('page-lc').classList.toggle('active',t==='lc');
   document.getElementById('page-lb').classList.toggle('active',t==='lb');
+  document.getElementById('page-upload').classList.toggle('active',t==='upload');
   if(t==='cards') loadCards();
   else if(t==='tx') loadTx();
   else if(t==='monthly') loadMonthly();
@@ -278,7 +653,7 @@ function switchTab(t){
   else if(t==='cs') loadCardStmt();
   else if(t==='ledger') loadLedger();
   else if(t==='lc') loadLc();
-  else loadLb();
+  else if(t==='lb') loadLb();
 }
 
 // ===== 계정별원장 =====
@@ -629,27 +1004,81 @@ function lbMonths(){
   for(let m=1;m<=12;m++) list.push(`${year}-${String(m).padStart(2,'0')}`);
   return list;
 }
-function renderLb(){
+// 분기 키: 12월은 전년도 4분기로 단독 취급
+function lbQuarterKey(mo){
+  const [y,m]=mo.split('-').map(Number);
+  return `${y}-Q${Math.ceil(m/3)}`;
+}
+// 로컬 대시보드와 동일한 규칙으로 예산/이월/잔액 계산
+function lbCalc(){
   const months=lbMonths();
+  const bpp=50000;
+  const result={};
+  LB_TEAMS.forEach(team=>{
+    result[team]={};
+    let prevZan=0, curQ='', carryUsed=false;
+    months.forEach(mo=>{
+      const qKey=lbQuarterKey(mo);
+      const newQuarter=qKey!==curQ;
+      if(newQuarter){ curQ=qKey; carryUsed=false; }
+      const rec=(_lbData[team]||{})[mo]||{};
+      const hc=rec.headcount||0;
+      const budget=hc*bpp;
+      let carry=0;
+      if(!newQuarter&&!carryUsed&&prevZan>0){ carry=prevZan; carryUsed=true; }
+      const used=rec.expenses_manual||0;
+      const zan=budget+carry-used;
+      result[team][mo]={hc,budget,carry,used,roster:rec.roster||'',zan};
+      prevZan=zan;
+    });
+  });
+  return {result,months};
+}
+let _lbTab='인원입력';
+function lbSetTab(t){
+  _lbTab=t;
+  document.querySelectorAll('.lb-subtab').forEach(el=>el.classList.toggle('active',el.dataset.lbtab===t));
+  renderLb();
+}
+function renderLb(){
+  const {result,months}=lbCalc();
   const thead=document.getElementById('lb-thead');
   const tbody=document.getElementById('lb-tbody');
+  const TAB_ROWS={
+    '인원입력':[
+      {key:'hc',label:'인원(명)',edit:'headcount'},
+      {key:'roster',label:'구성원 명단',edit:'roster',textarea:true}
+    ],
+    '사용액입력':[
+      {key:'used',label:'사용액(원)',edit:'expenses_manual'}
+    ],
+    '월별정산':[
+      {key:'hc',label:'인원(명)'},
+      {key:'budget',label:'예산(원)'},
+      {key:'used',label:'사용액(원)'},
+      {key:'zan',label:'잔액(원)',bold:true}
+    ],
+    '이월현황':[
+      {key:'budget',label:'당월예산(원)'},
+      {key:'carry',label:'전월이월(원)'},
+      {key:'used',label:'사용액(원)'},
+      {key:'zan',label:'잔액(원)',bold:true}
+    ]
+  };
+  const rows=TAB_ROWS[_lbTab];
   thead.innerHTML=`<tr><th>팀</th><th>항목</th>${months.map(m=>`<th style="text-align:center">${m.slice(2).replace('-','.')}</th>`).join('')}</tr>`;
   let html='';
   LB_TEAMS.forEach(team=>{
-    const rowsDef=[
-      {key:'headcount',label:'인원(명)',type:'number'},
-      {key:'expenses_manual',label:'사용액(원)',type:'number'},
-      {key:'roster',label:'구성원 명단',type:'textarea'}
-    ];
-    rowsDef.forEach((rd,ri)=>{
+    rows.forEach((rd,ri)=>{
       html+=`<tr>
-        ${ri===0?`<td rowspan="3" style="font-weight:700;vertical-align:middle">${team}</td>`:''}
-        <td style="color:var(--text2);white-space:nowrap">${rd.label}</td>
+        ${ri===0?`<td rowspan="${rows.length}" style="font-weight:700;vertical-align:middle">${team}</td>`:''}
+        <td style="color:var(--text2);white-space:nowrap${rd.bold?';font-weight:700':''}">${rd.label}</td>
         ${months.map(m=>{
-          const rec=(_lbData[team]||{})[m]||{};
-          const v=rec[rd.key]||'';
-          if(rd.type==='textarea') return `<td><textarea onchange="saveLbCell('${team}','${m}','${rd.key}',this.value)">${v}</textarea></td>`;
-          return `<td><input type="number" value="${v}" style="text-align:right" onchange="saveLbCell('${team}','${m}','${rd.key}',this.value)"></td>`;
+          const v=result[team][m][rd.key];
+          if(rd.edit==='roster') return `<td><textarea onchange="saveLbCell('${team}','${m}','roster',this.value)">${v||''}</textarea></td>`;
+          if(rd.edit) return `<td><input type="number" value="${v||''}" style="text-align:right" onchange="saveLbCell('${team}','${m}','${rd.edit}',this.value)"></td>`;
+          const neg=rd.key==='zan'&&v<0;
+          return `<td style="text-align:right${rd.bold?';font-weight:700':''}${neg?';color:var(--danger)':''}">${v||v===0?fmt(v):'—'}</td>`;
         }).join('')}
       </tr>`;
     });
@@ -665,6 +1094,7 @@ async function saveLbCell(team,month,key,value){
     if(!_lbData[team]) _lbData[team]={};
     if(!_lbData[team][month]) _lbData[team][month]={};
     _lbData[team][month][key]=payload[key];
+    renderLb();
   }
 }
 
