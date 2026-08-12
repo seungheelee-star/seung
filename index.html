@@ -6,47 +6,75 @@
 <title>법인카드·경비 관리</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   :root{
-    --bg:#f4f5f8;--card-bg:#fff;--border:#e7e8ee;--text:#161a2b;--text2:#666e85;--text3:#9aa1b5;
-    --primary:#3d4bd6;--primary-light:#eceeff;--success:#0ea86e;--warning:#e08a1e;--danger:#e5484d;
-    --radius:10px;--shadow:0 1px 2px rgba(20,22,45,.04),0 2px 8px rgba(20,22,45,.05);
+    --sidebar-w:224px;
+    --bg:#f4f5f8;--card-bg:#fff;--border:#e7e8ee;--border-light:#f1f2f6;--text:#161a2b;--text2:#666e85;--text3:#9aa1b5;
+    --primary:#3d4bd6;--primary-dark:#2f3ac2;--primary-light:#eceeff;
+    --accent-grad:linear-gradient(135deg,#4c56e0 0%,#6f4cd6 100%);
+    --success:#0ea86e;--warning:#e08a1e;--danger:#e5484d;
+    --radius:10px;--radius-lg:14px;
+    --shadow:0 1px 2px rgba(20,22,45,.04),0 2px 8px rgba(20,22,45,.05);
+    --shadow-md:0 4px 14px rgba(20,22,45,.07),0 1px 3px rgba(20,22,45,.05);
+    --sidebar-bg:#181c2e;--sidebar-border:rgba(255,255,255,.06);
+    --sidebar-text:#b7bcd4;--sidebar-text-muted:#6b7191;
+    --sidebar-active-bg:rgba(90,102,240,.16);--sidebar-active-text:#8b93ff;--sidebar-hover-bg:rgba(255,255,255,.05);
   }
-  body{font-family:-apple-system,BlinkMacSystemFont,'Malgun Gothic',sans-serif;background:var(--bg);color:var(--text);font-size:14px;padding:20px}
-  .wrap{max-width:1100px;margin:0 auto}
-  h1{font-size:20px;font-weight:800;margin-bottom:4px}
-  .sub{font-size:12px;color:var(--text2);margin-bottom:20px}
-  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:16px}
-  .tab{padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;color:var(--text2)}
-  .tab.active{color:var(--primary);border-bottom-color:var(--primary)}
+  html{-webkit-font-smoothing:antialiased}
+  body{font-family:'Pretendard',-apple-system,BlinkMacSystemFont,'Malgun Gothic',sans-serif;background:var(--bg);color:var(--text);font-size:14px;letter-spacing:-.01em;display:flex;min-height:100vh}
+
+  #sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--sidebar-bg);min-height:100vh;position:sticky;top:0;align-self:flex-start;display:flex;flex-direction:column}
+  .sb-logo{display:flex;align-items:center;gap:10px;padding:20px 18px 16px;border-bottom:1px solid var(--sidebar-border)}
+  .sb-logo-dot{width:26px;height:26px;border-radius:7px;background:var(--accent-grad);flex-shrink:0;box-shadow:0 2px 6px rgba(90,102,240,.5)}
+  .sb-logo span{font-size:13px;font-weight:700;color:#fff;letter-spacing:-.01em}
+  .sb-nav{padding:10px}
+
+  .tab{display:block;padding:9px 12px;font-size:13px;font-weight:500;cursor:pointer;color:var(--sidebar-text);border-radius:8px;margin-bottom:2px;position:relative;transition:background .15s,color .15s}
+  .tab:hover{background:var(--sidebar-hover-bg);color:#fff}
+  .tab.active{background:var(--sidebar-active-bg);color:var(--sidebar-active-text);font-weight:600}
+  .tab.active::before{content:'';position:absolute;left:-10px;top:50%;transform:translateY(-50%);width:3px;height:16px;border-radius:0 3px 3px 0;background:var(--sidebar-active-text)}
+
+  #main{flex:1;min-width:0;padding:24px 26px}
   .page{display:none}
   .page.active{display:block}
-  .card{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);margin-bottom:14px}
-  .btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:12px;color:var(--text);font-weight:500}
+
+  .card{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:17px 19px;box-shadow:var(--shadow);margin-bottom:14px}
+  .btn{display:inline-flex;align-items:center;gap:5px;padding:6px 13px;border-radius:8px;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:12px;color:var(--text);font-weight:500;transition:background .15s,transform .1s}
   .btn:hover{background:var(--bg)}
-  .btn-primary{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .btn:active{transform:translateY(1px)}
+  .btn-primary{background:var(--accent-grad);color:#fff;border-color:transparent;box-shadow:0 2px 8px rgba(61,75,214,.28)}
   .btn-sm{padding:4px 9px;font-size:11px}
   table{width:100%;border-collapse:collapse;font-size:13px}
-  th{text-align:left;font-size:11px;font-weight:700;color:var(--text2);padding:8px 10px;border-bottom:1px solid var(--border);background:var(--bg);white-space:nowrap}
-  td{padding:8px 10px;border-bottom:1px solid #f1f2f6;vertical-align:middle}
+  th{text-align:left;font-size:11px;font-weight:700;color:var(--text2);padding:9px 10px;border-bottom:1px solid var(--border);background:var(--bg);white-space:nowrap}
+  td{padding:9px 10px;border-bottom:1px solid var(--border-light);vertical-align:middle}
+  tr:hover td{background:#f7f8fd}
   .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
   .filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
-  input,select,textarea{padding:6px 9px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit}
+  input,select,textarea{padding:6px 9px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit;background:#fff;color:var(--text)}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--primary-light);outline-offset:1px;border-color:var(--primary)}
   .memo-input{width:140px}
   .lb-table input,.lb-table textarea{width:100%;border:none;background:transparent;font-size:12px}
   .lb-table textarea{min-height:50px;resize:vertical}
   .lb-table td{padding:4px 6px}
   .status-msg{font-size:12px;color:var(--text2);margin-bottom:10px}
   .empty{text-align:center;color:var(--text3);padding:30px}
+  @media(max-width:768px){
+    body{flex-direction:column}
+    #sidebar{width:100%;position:static;min-height:auto}
+    .sb-nav{display:flex;flex-wrap:wrap;gap:4px}
+    .tab.active::before{display:none}
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>법인카드·경비 관리</h1>
-  <div class="sub">대조현황 처리 · 리더활동비 입력을 사내 인원과 함께 작업하는 공간입니다.</div>
-
-  <div class="tabs">
+<nav id="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-dot"></div>
+    <span>법인카드·경비 관리</span>
+  </div>
+  <div class="sb-nav">
     <div class="tab active" data-tab="cards" onclick="switchTab('cards')">카드별 현황</div>
     <div class="tab" data-tab="tx" onclick="switchTab('tx')">이용내역</div>
     <div class="tab" data-tab="monthly" onclick="switchTab('monthly')">부서별 지출현황</div>
@@ -56,6 +84,8 @@
     <div class="tab" data-tab="lc" onclick="switchTab('lc')">대조현황 처리</div>
     <div class="tab" data-tab="lb" onclick="switchTab('lb')">리더활동비 입력</div>
   </div>
+</nav>
+<div id="main">
 
   <!-- 계정별원장 -->
   <div class="page" id="page-ledger">
