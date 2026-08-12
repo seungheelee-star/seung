@@ -46,13 +46,27 @@
   <div class="sub">대조현황 처리 · 리더활동비 입력을 사내 인원과 함께 작업하는 공간입니다.</div>
 
   <div class="tabs">
-    <div class="tab active" data-tab="tx" onclick="switchTab('tx')">이용내역</div>
+    <div class="tab active" data-tab="cards" onclick="switchTab('cards')">카드별 현황</div>
+    <div class="tab" data-tab="tx" onclick="switchTab('tx')">이용내역</div>
     <div class="tab" data-tab="lc" onclick="switchTab('lc')">대조현황 처리</div>
     <div class="tab" data-tab="lb" onclick="switchTab('lb')">리더활동비 입력</div>
   </div>
 
+  <!-- 카드별 현황 -->
+  <div class="page active" id="page-cards">
+    <div class="card">
+      <div class="filters">
+        <input type="month" id="cards-month" onchange="renderCards()">
+        <span style="flex:1"></span>
+        <button class="btn" onclick="loadCards()">새로고침</button>
+      </div>
+      <div class="status-msg" id="cards-status"></div>
+      <div id="cards-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px"></div>
+    </div>
+  </div>
+
   <!-- 이용내역 -->
-  <div class="page active" id="page-tx">
+  <div class="page" id="page-tx">
     <div class="card">
       <div class="filters">
         <input type="text" id="tx-search" placeholder="가맹점 검색" oninput="renderTx()">
@@ -128,10 +142,66 @@ function fmt(n){ return (n||n===0)?Number(n).toLocaleString('ko-KR'):'—'; }
 
 function switchTab(t){
   document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active',el.dataset.tab===t));
+  document.getElementById('page-cards').classList.toggle('active',t==='cards');
   document.getElementById('page-tx').classList.toggle('active',t==='tx');
   document.getElementById('page-lc').classList.toggle('active',t==='lc');
   document.getElementById('page-lb').classList.toggle('active',t==='lb');
-  if(t==='tx') loadTx(); else if(t==='lc') loadLc(); else loadLb();
+  if(t==='cards') loadCards(); else if(t==='tx') loadTx(); else if(t==='lc') loadLc(); else loadLb();
+}
+
+// ===== 카드별 현황 =====
+let _cardsList=[], _cardsTxAll=[];
+async function loadCards(){
+  document.getElementById('cards-status').textContent='불러오는 중...';
+  const {data:cards,error:e1}=await sb.from('cards_shared').select('*');
+  if(e1){ document.getElementById('cards-status').textContent='오류: '+e1.message; return; }
+  // 전체 이용내역도 필요 (소진율 계산용) — 페이지네이션으로 전부 가져옴
+  let all=[], from=0, pageSize=1000;
+  while(true){
+    const {data,error}=await sb.from('tx_shared').select('date,last4,amount').range(from,from+pageSize-1);
+    if(error){ document.getElementById('cards-status').textContent='오류: '+error.message; return; }
+    all=all.concat(data||[]);
+    if(!data||data.length<pageSize) break;
+    from+=pageSize;
+  }
+  _cardsList=cards||[];
+  _cardsTxAll=all;
+  if(!document.getElementById('cards-month').value){
+    const now=new Date();
+    document.getElementById('cards-month').value=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  }
+  document.getElementById('cards-status').textContent=`카드 ${_cardsList.length}건`;
+  renderCards();
+}
+function renderCards(){
+  const month=document.getElementById('cards-month').value;
+  const el=document.getElementById('cards-list');
+  if(!_cardsList.length){ el.innerHTML='<div class="empty">공유된 카드 정보가 없습니다. 로컬 대시보드에서 "공유 서버에 카드 정보 반영"을 먼저 실행해주세요.</div>'; return; }
+  el.innerHTML=_cardsList.map(c=>{
+    const used=_cardsTxAll.filter(t=>t.last4===c.last4&&(!month||(t.date||'').startsWith(month))).reduce((s,t)=>s+(t.amount||0),0);
+    const limit=c.card_limit||0;
+    const pct=limit>0?(used/limit*100):0;
+    const color=pct>=90?'var(--danger)':pct>=50?'var(--warning)':'var(--success)';
+    return `<div class="card" style="margin-bottom:0">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+        <div>
+          <div style="font-weight:700;font-size:13px">${c.name}</div>
+          <div style="font-size:11px;color:var(--text2)">${c.dept} · ${c.issuer}</div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:6px">
+        <span>사용: <strong style="color:var(--text)">${fmt(used)}</strong></span>
+        <span>한도: <strong style="color:var(--text)">${fmt(limit)}</strong></span>
+      </div>
+      <div style="background:#eceef5;border-radius:999px;height:6px;overflow:hidden;margin-bottom:6px">
+        <div style="width:${Math.min(pct,100)}%;height:100%;background:${color}"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2)">
+        <span>소진율 <strong style="color:var(--text)">${pct.toFixed(1)}%</strong></span>
+        <span>잔여 <strong style="color:var(--text)">${fmt(limit-used)}</strong></span>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 // ===== 이용내역 =====
@@ -279,7 +349,7 @@ async function saveLbCell(team,month,key,value){
   }
 }
 
-loadTx();
+loadCards();
 </script>
 </body>
 </html>
