@@ -50,8 +50,30 @@
     <div class="tab active" data-tab="cards" onclick="switchTab('cards')">카드별 현황</div>
     <div class="tab" data-tab="tx" onclick="switchTab('tx')">이용내역</div>
     <div class="tab" data-tab="monthly" onclick="switchTab('monthly')">부서별 지출현황</div>
+    <div class="tab" data-tab="wihago" onclick="switchTab('wihago')">위하고 경비</div>
     <div class="tab" data-tab="lc" onclick="switchTab('lc')">대조현황 처리</div>
     <div class="tab" data-tab="lb" onclick="switchTab('lb')">리더활동비 입력</div>
+  </div>
+
+  <!-- 위하고 경비 -->
+  <div class="page" id="page-wihago">
+    <div class="card">
+      <div class="filters">
+        <input type="text" id="wh-search" placeholder="가맹점/내용 검색" oninput="renderWihago()">
+        <input type="month" id="wh-month" onchange="renderWihago()">
+        <span style="flex:1"></span>
+        <button class="btn" onclick="loadWihago()">새로고침</button>
+      </div>
+      <div class="status-msg" id="wh-status"></div>
+      <div id="wh-kpi" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px"></div>
+      <div id="wh-dept-list" style="margin-bottom:16px"></div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>날짜</th><th>사용자</th><th>부서</th><th>내용</th><th>용도</th><th>거래처</th><th style="text-align:right">금액</th><th>상태</th></tr></thead>
+          <tbody id="wh-tbody"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <!-- 부서별 지출현황 -->
@@ -170,13 +192,74 @@ function switchTab(t){
   document.getElementById('page-cards').classList.toggle('active',t==='cards');
   document.getElementById('page-tx').classList.toggle('active',t==='tx');
   document.getElementById('page-monthly').classList.toggle('active',t==='monthly');
+  document.getElementById('page-wihago').classList.toggle('active',t==='wihago');
   document.getElementById('page-lc').classList.toggle('active',t==='lc');
   document.getElementById('page-lb').classList.toggle('active',t==='lb');
   if(t==='cards') loadCards();
   else if(t==='tx') loadTx();
   else if(t==='monthly') loadMonthly();
+  else if(t==='wihago') loadWihago();
   else if(t==='lc') loadLc();
   else loadLb();
+}
+
+// ===== 위하고 경비 =====
+let _whRows=[];
+async function loadWihago(){
+  document.getElementById('wh-status').textContent='불러오는 중...';
+  let all=[], from=0, pageSize=1000;
+  while(true){
+    const {data,error}=await sb.from('wihago_shared').select('*').order('date',{ascending:false}).range(from,from+pageSize-1);
+    if(error){ document.getElementById('wh-status').textContent='오류: '+error.message; return; }
+    all=all.concat(data||[]);
+    if(!data||data.length<pageSize) break;
+    from+=pageSize;
+  }
+  _whRows=all;
+  document.getElementById('wh-status').textContent=`총 ${_whRows.length}건`;
+  renderWihago();
+}
+function renderWihago(){
+  const q=(document.getElementById('wh-search').value||'').trim();
+  const month=document.getElementById('wh-month').value;
+  let rows=_whRows;
+  if(q) rows=rows.filter(r=>(r.content||'').includes(q)||(r.partner||'').includes(q));
+  if(month) rows=rows.filter(r=>(r.date||'').startsWith(month));
+
+  const total=rows.reduce((s,r)=>s+(r.amount||0),0);
+  const thisMonthKey=new Date().toISOString().slice(0,7);
+  const thisMonthTotal=rows.filter(r=>(r.date||'').startsWith(thisMonthKey)).reduce((s,r)=>s+(r.amount||0),0);
+  document.getElementById('wh-kpi').innerHTML=`
+    <div class="card" style="margin-bottom:0"><div style="font-size:11px;color:var(--text2);margin-bottom:4px">전체 건수</div><div style="font-size:18px;font-weight:700">${rows.length.toLocaleString()}건</div></div>
+    <div class="card" style="margin-bottom:0"><div style="font-size:11px;color:var(--text2);margin-bottom:4px">전체 합계</div><div style="font-size:18px;font-weight:700">${fmt(total)}</div></div>
+    <div class="card" style="margin-bottom:0"><div style="font-size:11px;color:var(--text2);margin-bottom:4px">이번달 합계</div><div style="font-size:18px;font-weight:700">${fmt(thisMonthTotal)}</div></div>
+  `;
+
+  // 부서별 랭킹
+  const byDept={};
+  rows.forEach(r=>{ const d=r.dept||'(미지정)'; byDept[d]=(byDept[d]||0)+(r.amount||0); });
+  const deptList=Object.entries(byDept).sort((a,b)=>b[1]-a[1]);
+  const maxV=deptList[0]?deptList[0][1]:0;
+  document.getElementById('wh-dept-list').innerHTML=deptList.map(([name,v])=>{
+    const pct=maxV>0?(v/maxV*100):0;
+    return `<div style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span style="font-weight:600">${name}</span><span>${fmt(v)}</span></div>
+      <div style="background:#eceef5;border-radius:5px;height:12px;overflow:hidden"><div style="width:${pct}%;height:100%;background:var(--primary)"></div></div>
+    </div>`;
+  }).join('');
+
+  const tbody=document.getElementById('wh-tbody');
+  if(!rows.length){ tbody.innerHTML='<tr><td colspan="8" class="empty">데이터 없음</td></tr>'; return; }
+  tbody.innerHTML=rows.slice(0,300).map(r=>`<tr>
+    <td style="white-space:nowrap">${r.date||''}</td>
+    <td>${r.user_name||''}</td>
+    <td>${r.dept||''}</td>
+    <td>${r.content||''}</td>
+    <td style="font-size:12px;color:var(--text2)">${r.category||''}</td>
+    <td>${r.partner||''}</td>
+    <td style="text-align:right">${fmt(r.amount)}</td>
+    <td>${r.status||''}</td>
+  </tr>`).join('');
 }
 
 // ===== 부서별 지출현황 (카드별 월별 추이) =====
