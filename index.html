@@ -1021,6 +1021,28 @@ function lbQuarterKey(mo){
   const [y,m]=mo.split('-').map(Number);
   return `${y}-Q${Math.ceil(m/3)}`;
 }
+function lbDaysInMonth(mo){
+  const [y,m]=mo.split('-').map(Number);
+  return new Date(y,m,0).getDate();
+}
+function lbParsePerson(line){
+  const m=line.match(/^(.+?)\/(입사|퇴사)(\d{1,2})$/);
+  if(m) return {name:m[1].trim(),tag:{type:m[2],day:parseInt(m[3])}};
+  return {name:line.trim(),tag:null};
+}
+function lbPersonBudget(person,bpp,daysInMonth){
+  if(!person.tag) return bpp;
+  if(person.tag.type==='입사') return person.tag.day<=26?bpp:0;
+  if(person.tag.type==='퇴사') return person.tag.day<=26?Math.round(bpp*person.tag.day/daysInMonth):bpp;
+  return bpp;
+}
+// 구성원 명단이 입력되어 있으면 인원/예산을 명단에서 자동 계산 (로컬 대시보드와 동일 규칙)
+function lbParseRoster(text,bpp,mo){
+  const daysInMonth=lbDaysInMonth(mo);
+  const people=(text||'').split(/[\n,]/).map(s=>s.trim()).filter(Boolean).map(lbParsePerson);
+  const budget=people.reduce((s,p)=>s+lbPersonBudget(p,bpp,daysInMonth),0);
+  return {hc:people.length,budget};
+}
 // 로컬 대시보드와 동일한 규칙으로 예산/이월/잔액 계산
 function lbCalc(){
   const months=lbMonths();
@@ -1034,13 +1056,20 @@ function lbCalc(){
       const newQuarter=qKey!==curQ;
       if(newQuarter){ curQ=qKey; carryUsed=false; }
       const rec=(_lbData[team]||{})[mo]||{};
-      const hc=rec.headcount||0;
-      const budget=hc*bpp;
+      const roster=rec.roster||'';
+      let hc,budget;
+      if(roster.trim()){
+        const parsed=lbParseRoster(roster,bpp,mo);
+        hc=parsed.hc; budget=parsed.budget;
+      } else {
+        hc=rec.headcount||0;
+        budget=hc*bpp;
+      }
       let carry=0;
       if(!newQuarter&&!carryUsed&&prevZan>0){ carry=prevZan; carryUsed=true; }
       const used=rec.expenses_manual||0;
       const zan=budget+carry-used;
-      result[team][mo]={hc,budget,carry,used,roster:rec.roster||'',zan};
+      result[team][mo]={hc,budget,carry,used,roster,zan};
       prevZan=zan;
     });
   });
@@ -1100,9 +1129,13 @@ function renderLb(){
         ${months.map(m=>{
           const v=result[team][m][rd.key];
           const cellStyle=`${tdBase};background:${rd.color};color:${rd.textColor};${rd.bold?'font-weight:700':''}${isLast?';border-bottom:2px solid var(--border)':''}`;
+          const hasRoster=!!(result[team][m].roster||'').trim();
           if(rd.edit==='roster') return `<td style="${cellStyle.replace('text-align:right','text-align:left')};padding:0;vertical-align:top"><textarea placeholder="이름1&#10;이름2/입사12"
             style="width:100%;min-height:60px;border:none;background:transparent;padding:6px 8px;font-size:11px;line-height:1.5;resize:vertical;font-family:inherit;color:${rd.textColor}"
             onchange="saveLbCell('${team}','${m}','roster',this.value)">${v||''}</textarea></td>`;
+          if(rd.edit==='headcount'&&hasRoster){
+            return `<td style="${cellStyle};color:var(--text2)" title="구성원 명단에서 자동 계산됨">${v?fmt(v):'0'}</td>`;
+          }
           if(rd.edit) return `<td style="${cellStyle};padding:0"><input type="text" inputmode="numeric" value="${v?fmt(v):''}" placeholder="0"
             style="width:100%;height:100%;min-height:32px;border:none;background:transparent;text-align:right;padding:7px 10px;font-size:12px;color:${rd.textColor}"
             oninput="this.value=this.value.replace(/[^0-9]/g,'').replace(/\\B(?=(\\d{3})+(?!\\d))/g,',')"
