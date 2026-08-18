@@ -996,13 +996,17 @@ async function saveLcMemo(rowKey,memo){
 }
 
 // ===== 리더활동비 =====
-const LB_TEAMS=['사업부','마케팅챕터','크리에이티브챕터','PBO'];
+const LB_DEFAULT_TEAMS=['사업부','마케팅챕터','브랜드디자인챕터','PBO','BM챕터'];
+let LB_TEAMS=[...LB_DEFAULT_TEAMS];
 let _lbData={};
 async function loadLb(){
   const {data,error}=await sb.from('lb_shared_monthly').select('*');
   if(error){ alert('오류: '+error.message); return; }
   _lbData={};
   (data||[]).forEach(d=>{ if(!_lbData[d.team]) _lbData[d.team]={}; _lbData[d.team][d.month]=d; });
+  const teamSet=new Set(LB_DEFAULT_TEAMS);
+  Object.keys(_lbData).forEach(t=>teamSet.add(t));
+  LB_TEAMS=[...teamSet];
   renderLb();
 }
 function lbMonths(){
