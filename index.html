@@ -31,6 +31,8 @@
   .sb-logo-dot{width:26px;height:26px;border-radius:7px;background:var(--accent-grad);flex-shrink:0;box-shadow:0 2px 6px rgba(90,102,240,.5)}
   .sb-logo span{font-size:13px;font-weight:700;color:#fff;letter-spacing:-.01em}
   .sb-nav{padding:10px}
+  .sb-section{font-size:10.5px;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,.35);text-transform:uppercase;padding:14px 12px 6px}
+  .sb-section:first-child{padding-top:4px}
 
   .tab{display:block;padding:9px 12px;font-size:13px;font-weight:500;cursor:pointer;color:var(--sidebar-text);border-radius:8px;margin-bottom:2px;position:relative;transition:background .15s,color .15s}
   .tab:hover{background:var(--sidebar-hover-bg);color:#fff}
@@ -69,6 +71,7 @@
     #sidebar{width:100%;position:static;min-height:auto}
     .sb-nav{display:flex;flex-wrap:wrap;gap:4px}
     .tab.active::before{display:none}
+    .sb-section{display:none}
   }
 </style>
 </head>
@@ -79,14 +82,19 @@
     <span>법인카드·경비 관리</span>
   </div>
   <div class="sb-nav">
+    <div class="sb-section">법인카드관리</div>
     <div class="tab active" data-tab="cards" onclick="switchTab('cards')">카드별 현황</div>
     <div class="tab" data-tab="tx" onclick="switchTab('tx')">이용내역</div>
     <div class="tab" data-tab="monthly" onclick="switchTab('monthly')">부서별 지출현황</div>
+
+    <div class="sb-section">경비관리</div>
     <div class="tab" data-tab="wihago" onclick="switchTab('wihago')">위하고 경비</div>
     <div class="tab" data-tab="cs" onclick="switchTab('cs')">법인카드이용대금</div>
     <div class="tab" data-tab="ledger" onclick="switchTab('ledger')">계정별원장</div>
     <div class="tab" data-tab="lc" onclick="switchTab('lc')">대조현황 처리</div>
     <div class="tab" data-tab="lb" onclick="switchTab('lb')">리더활동비 입력</div>
+
+    <div class="sb-section">시스템관리</div>
     <div class="tab" data-tab="upload" onclick="switchTab('upload')">엑셀 업로드</div>
   </div>
 </nav>
