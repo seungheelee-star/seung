@@ -308,6 +308,7 @@
         <span style="color:var(--text2);font-size:12px">~</span>
         <input type="date" id="tx-to" onchange="renderTx()">
         <span style="flex:1"></span>
+        <button class="btn" onclick="checkBizStatusWeb()" title="롯데/신한 승인내역·법인명세서 업로드분의 거래처 사업자 상태(국세청) 조회">🏢 사업자상태 확인</button>
         <button class="btn btn-primary" id="gowid-sync-btn" onclick="syncGowid()">🔄 고위드 동기화</button>
         <button class="btn" onclick="loadTx()">새로고침</button>
       </div>
@@ -404,6 +405,16 @@
 
   <!-- 설정 -->
   <div class="page" id="page-settings">
+    <div class="card">
+      <div class="card-title">국세청 사업자등록정보 상태조회 API</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px">공공데이터포털에서 발급받은 서비스키를 입력하면, 이용내역 탭에서 거래처 사업자 상태(휴폐업·과세유형)를 조회할 수 있어요. 이 키는 이 브라우저에만 저장돼요.</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="password" id="nts-api-key" placeholder="서비스키 입력" style="width:280px">
+        <button class="btn btn-sm btn-primary" onclick="saveNtsApiKeyWeb()">저장</button>
+        <button class="btn btn-sm" onclick="testNtsApiKeyWeb()">연결 테스트</button>
+      </div>
+      <div id="nts-api-status" style="font-size:12px;margin-top:8px"></div>
+    </div>
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div class="card-title" style="margin-bottom:0">부서명 관리</div>
@@ -1025,6 +1036,76 @@ async function addCardWeb(){
   loadSettings();
 }
 
+// ===== 국세청 사업자등록정보 상태조회 =====
+function saveNtsApiKeyWeb(){
+  const k=document.getElementById('nts-api-key').value.trim();
+  if(!k){ alert('서비스키를 입력해주세요.'); return; }
+  localStorage.setItem('nts_api_key',k);
+  document.getElementById('nts-api-key').value='';
+  document.getElementById('nts-api-key').placeholder='저장됨 (변경하려면 다시 입력)';
+  document.getElementById('nts-api-status').innerHTML='<span style="color:var(--success)">✅ 저장되었습니다.</span>';
+}
+async function ntsCheckStatusWeb(bNoList){
+  const key=localStorage.getItem('nts_api_key')||'';
+  if(!key) throw new Error('국세청 API 키가 설정되지 않았습니다. 설정 탭에서 먼저 저장해주세요.');
+  const url=`https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey=${encodeURIComponent(key)}`;
+  const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({b_no:bNoList})});
+  if(!res.ok) throw new Error(`국세청 API 오류 (HTTP ${res.status})`);
+  const j=await res.json();
+  if(!j.data) throw new Error(j.msg||'응답 형식 오류');
+  return j.data;
+}
+async function testNtsApiKeyWeb(){
+  const statusEl=document.getElementById('nts-api-status');
+  statusEl.textContent='연결 중...';
+  try{
+    const data=await ntsCheckStatusWeb(['1101081326']);
+    if(!Array.isArray(data)) throw new Error('응답 형식이 예상과 다릅니다.');
+    statusEl.innerHTML='<span style="color:var(--success)">✅ 국세청 API 연결 성공</span>';
+  }catch(e){
+    statusEl.innerHTML=`<span style="color:var(--danger)">⚠️ 연결 실패: ${e.message}</span>`;
+  }
+}
+const NTS_STAT_LABEL_WEB={'01':'계속사업자','02':'휴업자','03':'폐업자'};
+const NTS_STAT_COLOR_WEB={'01':'#166534','02':'#92400e','03':'#991b1b'};
+const NTS_TAXTYPE_COLOR_WEB={'01':'#1e40af','02':'#92400e','03':'#6b7280','04':'#7c3aed'};
+function ntsBadgeWeb(bizNo){
+  if(!bizNo) return '';
+  const cache=JSON.parse(localStorage.getItem('nts_biz_status_cache')||'{}');
+  const rec=cache[bizNo];
+  if(!rec) return '';
+  const statColor=NTS_STAT_COLOR_WEB[rec.statCd]||'#6b7280';
+  const statBadge=`<span title="사업자번호 ${bizNo} · 조회 ${rec.checkedAt}" style="margin-left:6px;padding:1px 6px;border-radius:99px;font-size:10px;font-weight:600;background:${statColor}22;color:${statColor}">${rec.stat}</span>`;
+  if(!rec.taxType) return statBadge;
+  const taxColor=NTS_TAXTYPE_COLOR_WEB[rec.taxTypeCd]||'#6b7280';
+  const taxBadge=`<span title="과세유형" style="margin-left:4px;padding:1px 6px;border-radius:99px;font-size:10px;font-weight:600;background:${taxColor}22;color:${taxColor}">${rec.taxType}</span>`;
+  return statBadge+taxBadge;
+}
+async function checkBizStatusWeb(){
+  const uniqueBizNos=[...new Set(_txRows.map(r=>r.biz_no).filter(Boolean))];
+  if(!uniqueBizNos.length){ alert('사업자번호가 있는 거래(롯데/신한 승인내역·법인명세서 업로드분)가 없습니다.'); return; }
+  document.getElementById('tx-status').textContent=`⏳ 사업자 ${uniqueBizNos.length}건 상태 조회 중...`;
+  try{
+    const cache=JSON.parse(localStorage.getItem('nts_biz_status_cache')||'{}');
+    for(let i=0;i<uniqueBizNos.length;i+=100){
+      const chunk=uniqueBizNos.slice(i,i+100);
+      const data=await ntsCheckStatusWeb(chunk);
+      data.forEach(d=>{
+        cache[d.b_no]={
+          statCd:d.b_stat_cd,stat:NTS_STAT_LABEL_WEB[d.b_stat_cd]||d.b_stat,
+          taxType:d.tax_type||'',taxTypeCd:d.tax_type_cd||'',
+          checkedAt:new Date().toLocaleString('ko-KR')
+        };
+      });
+    }
+    localStorage.setItem('nts_biz_status_cache',JSON.stringify(cache));
+    document.getElementById('tx-status').textContent=`✅ ${uniqueBizNos.length}건 조회 완료`;
+    renderTx();
+  }catch(e){
+    document.getElementById('tx-status').textContent=`⚠️ 조회 실패: ${e.message}`;
+  }
+}
+
 // ===== 계정별원장 =====
 let _ledgerRows=[];
 async function loadLedger(){
@@ -1399,7 +1480,7 @@ function renderTx(){
     <td style="white-space:nowrap">${(r.date||'').replace(/-/g,'.')}</td>
     <td>${r.card_name||''}</td>
     <td>${r.last4||'—'}</td>
-    <td>${r.merchant||''}</td>
+    <td>${r.merchant||''}${ntsBadgeWeb(r.biz_no)}</td>
     <td style="text-align:right">${fmt(r.amount)}</td>
     <td style="font-size:12px;color:var(--text2)">${r.memo||''}</td>
   </tr>`).join('');
