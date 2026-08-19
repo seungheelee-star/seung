@@ -146,15 +146,39 @@
   <!-- 법인카드이용대금명세서 -->
   <div class="page" id="page-cs">
     <div class="card">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:12px;color:var(--text2)">업로드된 월:</span>
+        <div id="cs-month-badges" style="display:flex;flex-wrap:wrap;gap:6px;flex:1"></div>
+        <button class="btn" onclick="loadCardStmt()">새로고침</button>
+      </div>
+    </div>
+    <div class="card">
       <div class="filters">
         <input type="text" id="cs-search" placeholder="가맹점 검색" oninput="renderCardStmt()">
         <input type="date" id="cs-from" onchange="renderCardStmt()">
         <span style="color:var(--text2);font-size:12px">~</span>
         <input type="date" id="cs-to" onchange="renderCardStmt()">
-        <span style="flex:1"></span>
-        <button class="btn" onclick="loadCardStmt()">새로고침</button>
+        <select id="cs-card-filter" onchange="renderCardStmt()"><option value="">전체 카드</option></select>
+        <select id="cs-region-filter" onchange="renderCardStmt()">
+          <option value="">국내+해외</option>
+          <option value="국내">국내</option>
+          <option value="해외">해외</option>
+        </select>
+        <span id="cs-status" style="font-size:12px;color:var(--text2);margin-left:auto"></span>
       </div>
-      <div class="status-msg" id="cs-status"></div>
+    </div>
+    <div id="cs-monthly-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:14px"></div>
+    <div class="card">
+      <div class="card-title">카드별 합계</div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>카드명</th><th>뒷4자리</th><th style="text-align:right">건수</th><th style="text-align:right">합계</th></tr></thead>
+          <tbody id="cs-card-summary-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">거래 내역</div>
       <div style="overflow-x:auto">
         <table>
           <thead><tr><th>날짜</th><th>카드</th><th>뒷4자리</th><th>가맹점</th><th>승인번호</th><th>구분</th><th style="text-align:right">금액</th></tr></thead>
@@ -168,20 +192,38 @@
   <div class="page" id="page-wihago">
     <div class="card">
       <div class="filters">
-        <input type="text" id="wh-search" placeholder="가맹점/내용 검색" oninput="renderWihago()">
-        <input type="month" id="wh-month" onchange="renderWihago()">
-        <select id="wh-dept-filter" class="dept-filter-select" onchange="renderWihago()"><option value="">전체 부서</option></select>
-        <span style="flex:1"></span>
         <button class="btn" onclick="loadWihago()">새로고침</button>
+        <span style="flex:1"></span>
+        <span class="status-msg" id="wh-status" style="margin:0"></span>
       </div>
-      <div class="status-msg" id="wh-status"></div>
-      <div id="wh-kpi" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px"></div>
-      <div id="wh-dept-list" style="margin-bottom:16px"></div>
-      <div style="overflow-x:auto">
-        <table>
-          <thead><tr><th>날짜</th><th>사용자</th><th>부서</th><th>내용</th><th>용도</th><th>거래처</th><th style="text-align:right">금액</th><th>상태</th></tr></thead>
-          <tbody id="wh-tbody"></tbody>
-        </table>
+      <div id="wh-kpi" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px"></div>
+    </div>
+    <div class="card" style="padding:0">
+      <div style="display:flex;gap:2px;padding:14px 16px 0;border-bottom:1px solid var(--border)">
+        <div class="lb-subtab active" data-whtab="dept" onclick="whSetTab('dept')">부서별</div>
+        <div class="lb-subtab" data-whtab="cat" onclick="whSetTab('cat')">용도별</div>
+        <div class="lb-subtab" data-whtab="list" onclick="whSetTab('list')">전체 내역</div>
+      </div>
+
+      <!-- 부서별/용도별 공통 -->
+      <div id="wh-tab-chart" style="padding:16px">
+        <div id="wh-chart-monthly" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-bottom:14px"></div>
+        <div style="position:relative;width:100%;height:320px"><canvas id="whChart"></canvas></div>
+      </div>
+
+      <!-- 전체 내역 -->
+      <div id="wh-tab-list" style="display:none;padding:16px">
+        <div class="filters">
+          <input type="text" id="wh-search" placeholder="가맹점/내용 검색" oninput="renderWihago()">
+          <input type="month" id="wh-month" onchange="renderWihago()">
+          <select id="wh-dept-filter" class="dept-filter-select" onchange="renderWihago()"><option value="">전체 부서</option></select>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>날짜</th><th>사용자</th><th>부서</th><th>내용</th><th>용도</th><th>거래처</th><th style="text-align:right">금액</th><th>상태</th></tr></thead>
+            <tbody id="wh-tbody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -1034,16 +1076,57 @@ async function loadCardStmt(){
   }
   _csRows=all;
   document.getElementById('cs-status').textContent=`총 ${_csRows.length}건`;
+  // 카드 필터 옵션 갱신
+  const cardSel=document.getElementById('cs-card-filter');
+  const curCard=cardSel.value;
+  const cardNames=[...new Set(all.map(r=>r.card_name).filter(Boolean))].sort();
+  cardSel.innerHTML='<option value="">전체 카드</option>'+cardNames.map(n=>`<option value="${n}">${n}</option>`).join('');
+  if(cardNames.includes(curCard)) cardSel.value=curCard;
   renderCardStmt();
 }
 function renderCardStmt(){
   const q=(document.getElementById('cs-search').value||'').trim();
   const from=document.getElementById('cs-from').value;
   const to=document.getElementById('cs-to').value;
+  const cardF=document.getElementById('cs-card-filter').value;
+  const regionF=document.getElementById('cs-region-filter').value;
   let rows=_csRows;
   if(q) rows=rows.filter(r=>(r.merchant||'').includes(q));
   if(from) rows=rows.filter(r=>(r.date||'')>=from);
   if(to) rows=rows.filter(r=>(r.date||'')<=to);
+  if(cardF) rows=rows.filter(r=>r.card_name===cardF);
+  if(regionF) rows=rows.filter(r=>(r.is_foreign?'해외':'국내')===regionF);
+
+  // 업로드된 월 배지 (전체 데이터 기준, 클릭 시 검색기간에 반영)
+  const allMonths=[...new Set(_csRows.map(r=>(r.date||'').slice(0,7)).filter(Boolean))].sort().reverse();
+  document.getElementById('cs-month-badges').innerHTML=allMonths.map(m=>
+    `<span class="btn btn-sm" onclick="csSelectMonth('${m}')" style="cursor:pointer">${m}</span>`
+  ).join('')||'<span style="color:var(--text3);font-size:12px">데이터 없음</span>';
+
+  // 월별 합계
+  const byMonth={};
+  rows.forEach(r=>{ const m=(r.date||'').slice(0,7); if(!m) return; byMonth[m]=(byMonth[m]||0)+(r.amount||0); });
+  const monthEntries=Object.entries(byMonth).sort((a,b)=>b[0].localeCompare(a[0]));
+  document.getElementById('cs-monthly-grid').innerHTML=monthEntries.map(([m,v])=>
+    `<div class="card" style="margin-bottom:0;text-align:center">
+      <div style="font-size:11px;color:var(--text2);margin-bottom:4px">${m}</div>
+      <div style="font-size:16px;font-weight:700">${fmt(v)}원</div>
+    </div>`
+  ).join('')||'';
+
+  // 카드별 합계
+  const byCard={};
+  rows.forEach(r=>{
+    const key=r.card_name||'(미지정)';
+    if(!byCard[key]) byCard[key]={last4:r.last4||'',count:0,total:0};
+    byCard[key].count++;
+    byCard[key].total+=(r.amount||0);
+  });
+  const cardEntries=Object.entries(byCard).sort((a,b)=>b[1].total-a[1].total);
+  document.getElementById('cs-card-summary-body').innerHTML=cardEntries.map(([name,v])=>
+    `<tr><td>${name}</td><td>${v.last4||'—'}</td><td style="text-align:right">${v.count}건</td><td style="text-align:right">${fmt(v.total)}</td></tr>`
+  ).join('')||'<tr><td colspan="4" class="empty">데이터 없음</td></tr>';
+
   const tbody=document.getElementById('cs-tbody');
   if(!rows.length){ tbody.innerHTML='<tr><td colspan="7" class="empty">데이터 없음</td></tr>'; return; }
   tbody.innerHTML=rows.map(r=>`<tr>
@@ -1055,6 +1138,13 @@ function renderCardStmt(){
     <td>${r.is_foreign?'해외':'국내'}</td>
     <td style="text-align:right">${fmt(r.amount)}</td>
   </tr>`).join('');
+}
+function csSelectMonth(m){
+  document.getElementById('cs-from').value=m+'-01';
+  const [y,mo]=m.split('-').map(Number);
+  const last=new Date(y,mo,0).getDate();
+  document.getElementById('cs-to').value=`${m}-${String(last).padStart(2,'0')}`;
+  renderCardStmt();
 }
 
 // ===== 위하고 경비 =====
@@ -1074,49 +1164,99 @@ async function loadWihago(){
   document.getElementById('wh-status').textContent=`총 ${_whRows.length}건`;
   renderWihago();
 }
+let _whTab='dept', _whChartInst=null, _whMonthSel='';
+function whSetTab(t){
+  _whTab=t; _whMonthSel='';
+  document.querySelectorAll('.lb-subtab[data-whtab]').forEach(el=>el.classList.toggle('active',el.dataset.whtab===t));
+  document.getElementById('wh-tab-chart').style.display=t==='list'?'none':'block';
+  document.getElementById('wh-tab-list').style.display=t==='list'?'block':'none';
+  renderWihago();
+}
+function whColorFor(name){
+  let h=0; for(let i=0;i<name.length;i++) h=(h*31+name.charCodeAt(i))>>>0;
+  const colors=['#534AB7','#1D9E75','#D85A30','#D4537E','#888780','#378ADD','#BA7517','#639922','#A32D2D','#0F6E56'];
+  return colors[h%colors.length];
+}
+function whSelectMonth(m){ _whMonthSel=(_whMonthSel===m)?'':m; renderWihago(); }
 function renderWihago(){
-  const q=(document.getElementById('wh-search').value||'').trim();
-  const month=document.getElementById('wh-month').value;
-  const dept=document.getElementById('wh-dept-filter').value;
-  let rows=_whRows;
-  if(q) rows=rows.filter(r=>(r.content||'').includes(q)||(r.partner||'').includes(q));
-  if(month) rows=rows.filter(r=>(r.date||'').startsWith(month));
-  if(dept) rows=rows.filter(r=>(r.dept||'')===dept);
-
-  const total=rows.reduce((s,r)=>s+(r.amount||0),0);
+  const total=_whRows.reduce((s,r)=>s+(r.amount||0),0);
   const thisMonthKey=new Date().toISOString().slice(0,7);
-  const thisMonthTotal=rows.filter(r=>(r.date||'').startsWith(thisMonthKey)).reduce((s,r)=>s+(r.amount||0),0);
+  const thisMonthTotal=_whRows.filter(r=>(r.date||'').startsWith(thisMonthKey)).reduce((s,r)=>s+(r.amount||0),0);
   document.getElementById('wh-kpi').innerHTML=`
-    <div class="card" style="margin-bottom:0"><div style="font-size:11px;color:var(--text2);margin-bottom:4px">전체 건수</div><div style="font-size:18px;font-weight:700">${rows.length.toLocaleString()}건</div></div>
+    <div class="card" style="margin-bottom:0"><div style="font-size:11px;color:var(--text2);margin-bottom:4px">전체 건수</div><div style="font-size:18px;font-weight:700">${_whRows.length.toLocaleString()}건</div></div>
     <div class="card" style="margin-bottom:0"><div style="font-size:11px;color:var(--text2);margin-bottom:4px">전체 합계</div><div style="font-size:18px;font-weight:700">${fmt(total)}</div></div>
     <div class="card" style="margin-bottom:0"><div style="font-size:11px;color:var(--text2);margin-bottom:4px">이번달 합계</div><div style="font-size:18px;font-weight:700">${fmt(thisMonthTotal)}</div></div>
   `;
 
-  // 부서별 랭킹
-  const byDept={};
-  rows.forEach(r=>{ const d=r.dept||'(미지정)'; byDept[d]=(byDept[d]||0)+(r.amount||0); });
-  const deptList=Object.entries(byDept).sort((a,b)=>b[1]-a[1]);
-  const maxV=deptList[0]?deptList[0][1]:0;
-  document.getElementById('wh-dept-list').innerHTML=deptList.map(([name,v])=>{
-    const pct=maxV>0?(v/maxV*100):0;
-    return `<div style="margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span style="font-weight:600">${name}</span><span>${fmt(v)}</span></div>
-      <div style="background:#eceef5;border-radius:5px;height:12px;overflow:hidden"><div style="width:${pct}%;height:100%;background:var(--primary)"></div></div>
+  if(_whTab==='list'){
+    const q=(document.getElementById('wh-search').value||'').trim();
+    const month=document.getElementById('wh-month').value;
+    const dept=document.getElementById('wh-dept-filter').value;
+    let rows=_whRows;
+    if(q) rows=rows.filter(r=>(r.content||'').includes(q)||(r.partner||'').includes(q));
+    if(month) rows=rows.filter(r=>(r.date||'').startsWith(month));
+    if(dept) rows=rows.filter(r=>(r.dept||'')===dept);
+    const tbody=document.getElementById('wh-tbody');
+    if(!rows.length){ tbody.innerHTML='<tr><td colspan="8" class="empty">데이터 없음</td></tr>'; return; }
+    tbody.innerHTML=rows.slice(0,300).map(r=>`<tr>
+      <td style="white-space:nowrap">${r.date||''}</td>
+      <td>${r.user_name||''}</td>
+      <td>${r.dept||''}</td>
+      <td>${r.content||''}</td>
+      <td style="font-size:12px;color:var(--text2)">${r.category||''}</td>
+      <td>${r.partner||''}</td>
+      <td style="text-align:right">${fmt(r.amount)}</td>
+      <td>${r.status||''}</td>
+    </tr>`).join('');
+    return;
+  }
+
+  // 부서별/용도별 공통 차트 렌더
+  const groupFn=_whTab==='cat'?(r=>r.category||'(기타)'):(r=>r.dept||'(미지정)');
+  const byGroup={}, byMonth={};
+  _whRows.forEach(r=>{
+    const g=groupFn(r), m=(r.date||'').slice(0,7);
+    if(!g||!m) return;
+    if(!byGroup[g]) byGroup[g]={};
+    byGroup[g][m]=(byGroup[g][m]||0)+(r.amount||0);
+    byMonth[m]=(byMonth[m]||0)+(r.amount||0);
+  });
+  const months=Object.keys(byMonth).sort();
+  document.getElementById('wh-chart-monthly').innerHTML=months.map(m=>{
+    const active=m===_whMonthSel;
+    return `<div onclick="whSelectMonth('${m}')" style="cursor:pointer;background:${active?'var(--primary)':'var(--bg)'};border:1px solid ${active?'var(--primary)':'var(--border)'};border-radius:8px;padding:8px 10px;text-align:center">
+      <div style="font-size:11px;color:${active?'#fff':'var(--text2)'};margin-bottom:3px">${m.slice(5)}월</div>
+      <div style="font-size:13px;font-weight:600;color:${active?'#fff':'inherit'}">${fmtShort(byMonth[m])}원</div>
     </div>`;
   }).join('');
 
-  const tbody=document.getElementById('wh-tbody');
-  if(!rows.length){ tbody.innerHTML='<tr><td colspan="8" class="empty">데이터 없음</td></tr>'; return; }
-  tbody.innerHTML=rows.slice(0,300).map(r=>`<tr>
-    <td style="white-space:nowrap">${r.date||''}</td>
-    <td>${r.user_name||''}</td>
-    <td>${r.dept||''}</td>
-    <td>${r.content||''}</td>
-    <td style="font-size:12px;color:var(--text2)">${r.category||''}</td>
-    <td>${r.partner||''}</td>
-    <td style="text-align:right">${fmt(r.amount)}</td>
-    <td>${r.status||''}</td>
-  </tr>`).join('');
+  const groups=Object.keys(byGroup).map(g=>({
+    name:g,
+    total:_whMonthSel?(byGroup[g][_whMonthSel]||0):Object.values(byGroup[g]).reduce((s,v)=>s+v,0)
+  })).filter(x=>x.total>0).sort((a,b)=>b.total-a.total);
+  const grandTotal=groups.reduce((s,g)=>s+g.total,0);
+
+  const canvas=document.getElementById('whChart');
+  if(_whChartInst){ _whChartInst.destroy(); _whChartInst=null; }
+  if(!groups.length) return;
+  _whChartInst=new Chart(canvas.getContext('2d'),{
+    type:'bar',
+    data:{labels:groups.map(g=>g.name),datasets:[{data:groups.map(g=>g.total),backgroundColor:groups.map(g=>whColorFor(g.name)),borderRadius:5,barPercentage:0.65}]},
+    options:{
+      indexAxis:'y',
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{label:ctx=>{
+          const v=ctx.parsed.x;
+          const share=grandTotal>0?(v/grandTotal*100):0;
+          return ` ${fmt(v)} (${share.toFixed(1)}%)`;
+        }}}
+      },
+      scales:{ x:{ticks:{callback:v=>fmtShort(v)}}, y:{ticks:{font:{size:12,weight:'600'}}} }
+    }
+  });
 }
 
 // ===== 부서별 지출현황 (카드별 월별 추이) =====
