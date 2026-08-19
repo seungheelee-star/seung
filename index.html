@@ -170,6 +170,7 @@
       <div class="filters">
         <input type="text" id="wh-search" placeholder="가맹점/내용 검색" oninput="renderWihago()">
         <input type="month" id="wh-month" onchange="renderWihago()">
+        <select id="wh-dept-filter" class="dept-filter-select" onchange="renderWihago()"><option value="">전체 부서</option></select>
         <span style="flex:1"></span>
         <button class="btn" onclick="loadWihago()">새로고침</button>
       </div>
@@ -288,6 +289,7 @@
         <button class="btn" onclick="setLcFilter('원장초과')">원장초과</button>
         <button class="btn" onclick="setLcFilter('금액차이')">금액차이</button>
         <button class="btn" onclick="setLcFilter('처리됨')">처리됨</button>
+        <select id="lc-dept-filter" class="dept-filter-select" onchange="renderLc()"><option value="">전체 부서</option></select>
         <span style="flex:1"></span>
         <button class="btn" onclick="loadLc()">새로고침</button>
       </div>
@@ -873,6 +875,19 @@ async function loadHome(){
   document.getElementById('home-card-bars').innerHTML=barsHtml||'<p style="color:var(--text3);font-size:13px">카드 데이터 없음</p>';
 }
 
+// 부서명 관리 목록 + 실제 데이터에 찍힌 부서명을 합쳐서, 화면에 있는 모든 부서 필터 드롭다운(.dept-filter-select)을 채움
+async function refreshDeptFilterOptions(extraDepts){
+  const {data}=await sb.from('departments_shared').select('name');
+  const names=new Set((data||[]).map(d=>d.name));
+  (extraDepts||[]).forEach(d=>{ if(d) names.add(d); });
+  const sorted=[...names].sort();
+  document.querySelectorAll('.dept-filter-select').forEach(sel=>{
+    const cur=sel.value;
+    sel.innerHTML='<option value="">전체 부서</option>'+sorted.map(n=>`<option value="${n}">${n}</option>`).join('');
+    if(sorted.includes(cur)) sel.value=cur;
+  });
+}
+
 // ===== 설정: 카드 관리 =====
 let _settingsCards=[];
 async function loadSettings(){
@@ -1055,15 +1070,18 @@ async function loadWihago(){
     from+=pageSize;
   }
   _whRows=all;
+  refreshDeptFilterOptions(all.map(r=>r.dept));
   document.getElementById('wh-status').textContent=`총 ${_whRows.length}건`;
   renderWihago();
 }
 function renderWihago(){
   const q=(document.getElementById('wh-search').value||'').trim();
   const month=document.getElementById('wh-month').value;
+  const dept=document.getElementById('wh-dept-filter').value;
   let rows=_whRows;
   if(q) rows=rows.filter(r=>(r.content||'').includes(q)||(r.partner||'').includes(q));
   if(month) rows=rows.filter(r=>(r.date||'').startsWith(month));
+  if(dept) rows=rows.filter(r=>(r.dept||'')===dept);
 
   const total=rows.reduce((s,r)=>s+(r.amount||0),0);
   const thisMonthKey=new Date().toISOString().slice(0,7);
@@ -1257,16 +1275,19 @@ async function loadLc(){
   _lcRows=rows||[];
   _lcProcessed={};
   (proc||[]).forEach(p=>{ _lcProcessed[p.row_key]=p; });
+  refreshDeptFilterOptions(_lcRows.map(r=>r.dept));
   document.getElementById('lc-status').textContent=_lcRows.length?`총 ${_lcRows.length}건 (최근 업로드: ${_lcRows[0]?.uploaded_at?new Date(_lcRows[0].uploaded_at).toLocaleString('ko-KR'):'-'})`:'아직 업로드된 대조현황이 없습니다. 로컬 대시보드에서 "공유서버로 올리기"를 먼저 실행해주세요.';
   renderLc();
 }
 function setLcFilter(f){ _lcFilter=f; renderLc(); }
 function renderLc(){
   const typeStyle={'누락':'background:#fee2e2;color:#991b1b','원장초과':'background:#dbeafe;color:#1e40af','금액차이':'background:#fef3c7;color:#92400e','일치':'background:#dcfce7;color:#166534'};
+  const deptF=document.getElementById('lc-dept-filter').value;
   let rows=_lcRows.map(r=>({...r,isDone:!!_lcProcessed[r.row_key],proc:_lcProcessed[r.row_key]}));
   if(_lcFilter==='처리됨') rows=rows.filter(r=>r.isDone);
   else if(_lcFilter) rows=rows.filter(r=>r.type===_lcFilter&&!r.isDone);
   else rows=rows.filter(r=>!r.isDone);
+  if(deptF) rows=rows.filter(r=>(r.dept||'')===deptF);
   const tbody=document.getElementById('lc-tbody');
   if(!rows.length){ tbody.innerHTML='<tr><td colspan="10" class="empty">해당 항목 없음</td></tr>'; return; }
   tbody.innerHTML=rows.map(r=>{
