@@ -302,20 +302,36 @@
   <!-- 이용내역 -->
   <div class="page" id="page-tx">
     <div class="card">
-      <div class="filters">
-        <input type="text" id="tx-search" placeholder="가맹점 검색" oninput="renderTx()">
-        <input type="date" id="tx-from" onchange="renderTx()">
-        <span style="color:var(--text2);font-size:12px">~</span>
-        <input type="date" id="tx-to" onchange="renderTx()">
-        <span style="flex:1"></span>
-        <button class="btn" onclick="checkBizStatusWeb()" title="롯데/신한 승인내역·법인명세서 업로드분의 거래처 사업자 상태(국세청) 조회">🏢 사업자상태 확인</button>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div id="tx-data-summary" style="display:flex;flex-wrap:wrap;gap:8px;flex:1"></div>
         <button class="btn btn-primary" id="gowid-sync-btn" onclick="syncGowid()">🔄 고위드 동기화</button>
         <button class="btn" onclick="loadTx()">새로고침</button>
       </div>
-      <div class="status-msg" id="tx-status"></div>
+    </div>
+    <div class="card">
+      <div class="filters">
+        <select id="tx-card-filter"><option value="">전체 카드</option></select>
+        <select id="tx-source-filter">
+          <option value="">전체 구분</option>
+          <option value="gowid">고위드</option>
+          <option value="upload">업로드</option>
+          <option value="manual">수동입력</option>
+        </select>
+        <input type="date" id="tx-from">
+        <span style="color:var(--text2);font-size:12px">~</span>
+        <input type="date" id="tx-to">
+        <input type="text" id="tx-search" placeholder="가맹점 검색" oninput="renderTx()">
+        <button class="btn btn-primary btn-sm" onclick="renderTx()">조회</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>이용내역 <span id="tx-status" style="font-size:12px;color:var(--text2);font-weight:400"></span></span>
+        <button class="btn btn-sm" onclick="checkBizStatusWeb()" title="롯데/신한 승인내역·법인명세서 업로드분의 거래처 사업자 상태(국세청) 조회">🏢 사업자상태 확인</button>
+      </div>
       <div style="overflow-x:auto">
         <table>
-          <thead><tr><th>날짜</th><th>카드</th><th>뒷4자리</th><th>가맹점</th><th style="text-align:right">금액</th><th>메모</th></tr></thead>
+          <thead><tr><th>날짜</th><th>시간</th><th>카드명</th><th>뒷4자리</th><th>가맹점명</th><th>업종</th><th style="text-align:right">금액</th><th>구분</th><th>메모</th></tr></thead>
           <tbody id="tx-tbody"></tbody>
         </table>
       </div>
@@ -1464,26 +1480,60 @@ async function loadTx(){
   }
   _txRows=all;
   document.getElementById('tx-status').textContent=`총 ${_txRows.length}건`;
+
+  // 카드 필터 옵션 갱신
+  const cardSel=document.getElementById('tx-card-filter');
+  const curCard=cardSel.value;
+  const cardNames=[...new Set(all.map(r=>r.card_name).filter(Boolean))].sort();
+  cardSel.innerHTML='<option value="">전체 카드</option>'+cardNames.map(n=>`<option value="${n}">${n}</option>`).join('');
+  if(cardNames.includes(curCard)) cardSel.value=curCard;
+
+  // 데이터 출처 요약 배지 (고위드/업로드/수동입력)
+  const bySource={};
+  all.forEach(r=>{ const s=r.source||'기타'; if(!bySource[s]) bySource[s]={count:0,dates:[]}; bySource[s].count++; if(r.date) bySource[s].dates.push(r.date); });
+  const srcLabelMap={gowid:'고위드 API',upload:'업로드',manual:'수동 입력'};
+  document.getElementById('tx-data-summary').innerHTML=Object.entries(bySource).map(([s,v])=>{
+    const dates=v.dates.sort();
+    return `<div class="card" style="margin-bottom:0;padding:8px 14px">
+      <div style="color:var(--text2);font-size:12px;margin-bottom:2px">${srcLabelMap[s]||s}</div>
+      <div style="font-weight:600;font-size:13px">${v.count}건</div>
+      <div style="color:var(--text3);font-size:11px">${dates[0]||''} ~ ${dates[dates.length-1]||''}</div>
+    </div>`;
+  }).join('')||'<div style="font-size:12px;color:var(--text3);padding:8px">데이터 없음</div>';
+
   renderTx();
 }
 function renderTx(){
   const q=(document.getElementById('tx-search').value||'').trim();
   const from=document.getElementById('tx-from').value;
   const to=document.getElementById('tx-to').value;
+  const cardF=document.getElementById('tx-card-filter').value;
+  const sourceF=document.getElementById('tx-source-filter').value;
   let rows=_txRows;
   if(q) rows=rows.filter(r=>(r.merchant||'').includes(q));
   if(from) rows=rows.filter(r=>(r.date||'')>=from);
   if(to) rows=rows.filter(r=>(r.date||'')<=to);
+  if(cardF) rows=rows.filter(r=>r.card_name===cardF);
+  if(sourceF) rows=rows.filter(r=>(r.source||'')===sourceF);
   const tbody=document.getElementById('tx-tbody');
-  if(!rows.length){ tbody.innerHTML='<tr><td colspan="6" class="empty">데이터 없음</td></tr>'; return; }
-  tbody.innerHTML=rows.map(r=>`<tr>
+  if(!rows.length){ tbody.innerHTML='<tr><td colspan="9" class="empty">데이터 없음</td></tr>'; return; }
+  const srcLabelMap={gowid:'고위드',upload:'업로드',manual:'수동'};
+  const srcColorMap={gowid:'var(--primary-light);color:var(--primary)',upload:'#dcfce7;color:#166534',manual:'#dbeafe;color:#1e40af'};
+  tbody.innerHTML=rows.map(r=>{
+    const dt=r.datetime||r.date||'';
+    const timeStr=dt.length>=16?dt.slice(11,16):'';
+    return `<tr>
     <td style="white-space:nowrap">${(r.date||'').replace(/-/g,'.')}</td>
+    <td style="color:var(--text2)">${timeStr}</td>
     <td>${r.card_name||''}</td>
-    <td>${r.last4||'—'}</td>
+    <td style="color:var(--text2);font-size:12px">${r.last4||'—'}</td>
     <td>${r.merchant||''}${ntsBadgeWeb(r.biz_no)}</td>
+    <td style="font-size:12px;color:var(--text2)">${r.category||'—'}</td>
     <td style="text-align:right">${fmt(r.amount)}</td>
-    <td style="font-size:12px;color:var(--text2)">${r.memo||''}</td>
-  </tr>`).join('');
+    <td><span class="badge" style="background:${srcColorMap[r.source]||'#eceef5;color:var(--text2)'}">${srcLabelMap[r.source]||r.source||'기타'}</span></td>
+    <td style="font-size:12px;color:var(--text2)">${r.memo||'—'}</td>
+  </tr>`;
+  }).join('');
 }
 
 // ===== 대조현황 =====
