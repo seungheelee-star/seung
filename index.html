@@ -114,6 +114,7 @@
 
     <div class="sb-section">시스템관리</div>
     <div class="tab" data-tab="upload" onclick="switchTab('upload')">엑셀 업로드</div>
+    <div class="tab" data-tab="settings" onclick="switchTab('settings')">설정</div>
   </div>
   <div class="sb-toggle" id="sidebarToggle">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -354,6 +355,48 @@
       <div class="setting-label" style="font-weight:700;margin-bottom:10px">위하고(더존ERP)</div>
       <input type="file" id="file-wihago-up" accept=".xlsx,.xls,.csv" onchange="handleUploadWeb(event,'wihago')">
       <div id="res-wihago" class="status-msg"></div>
+    </div>
+  </div>
+
+  <!-- 설정 -->
+  <div class="page" id="page-settings">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="card-title" style="margin-bottom:0">카드 관리 (이름 · 부서 · 한도)</div>
+        <button class="btn" onclick="loadSettings()">새로고침</button>
+      </div>
+      <div class="status-msg" id="settings-status"></div>
+      <div style="overflow-x:auto">
+        <table style="width:100%">
+          <thead>
+            <tr>
+              <th style="white-space:nowrap">카드명</th>
+              <th>부서</th>
+              <th>카드사</th>
+              <th>뒷4자리</th>
+              <th style="text-align:right">월 한도</th>
+              <th style="width:50px"></th>
+            </tr>
+          </thead>
+          <tbody id="settings-cards-body"></tbody>
+          <tfoot>
+            <tr style="background:var(--primary-light)">
+              <td><input id="new-card-name" placeholder="카드명" style="width:100%"></td>
+              <td><input id="new-card-dept" placeholder="부서" style="width:100%"></td>
+              <td>
+                <select id="new-card-issuer" style="width:100%">
+                  <option value="신한/고위드">신한/고위드</option>
+                  <option value="신한(미연동)">신한(미연동)</option>
+                  <option value="롯데">롯데</option>
+                </select>
+              </td>
+              <td><input id="new-card-last4" placeholder="1234" maxlength="4" style="width:70px;text-align:center"></td>
+              <td><input id="new-card-limit" placeholder="0" style="width:100%;text-align:right"></td>
+              <td><button class="btn btn-sm btn-primary" onclick="addCardWeb()" style="white-space:nowrap">+ 추가</button></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   </div>
 </div>
@@ -711,6 +754,7 @@ function switchTab(t){
   document.getElementById('page-lc').classList.toggle('active',t==='lc');
   document.getElementById('page-lb').classList.toggle('active',t==='lb');
   document.getElementById('page-upload').classList.toggle('active',t==='upload');
+  document.getElementById('page-settings').classList.toggle('active',t==='settings');
   if(t==='home') loadHome();
   else if(t==='cards') loadCards();
   else if(t==='tx') loadTx();
@@ -720,6 +764,7 @@ function switchTab(t){
   else if(t==='ledger') loadLedger();
   else if(t==='lc') loadLc();
   else if(t==='lb') loadLb();
+  else if(t==='settings') loadSettings();
 }
 
 // ===== 홈 =====
@@ -814,6 +859,63 @@ async function loadHome(){
     </div>`;
   });
   document.getElementById('home-card-bars').innerHTML=barsHtml||'<p style="color:var(--text3);font-size:13px">카드 데이터 없음</p>';
+}
+
+// ===== 설정: 카드 관리 =====
+let _settingsCards=[];
+async function loadSettings(){
+  document.getElementById('settings-status').textContent='불러오는 중...';
+  const {data,error}=await sb.from('cards_shared').select('*').order('name');
+  if(error){ document.getElementById('settings-status').textContent='오류: '+error.message; return; }
+  _settingsCards=data||[];
+  document.getElementById('settings-status').textContent=`카드 ${_settingsCards.length}건`;
+  renderSettingsCards();
+}
+function renderSettingsCards(){
+  const tbody=document.getElementById('settings-cards-body');
+  tbody.innerHTML=_settingsCards.map(c=>`<tr>
+    <td><input value="${c.name||''}" onchange="updateCardField('${c.id}','name',this.value)" style="width:100%"></td>
+    <td><input value="${c.dept||''}" onchange="updateCardField('${c.id}','dept',this.value)" style="width:100%"></td>
+    <td>
+      <select onchange="updateCardField('${c.id}','issuer',this.value)">
+        <option value="신한/고위드" ${c.issuer==='신한/고위드'?'selected':''}>신한/고위드</option>
+        <option value="신한(미연동)" ${c.issuer==='신한(미연동)'?'selected':''}>신한(미연동)</option>
+        <option value="롯데" ${c.issuer==='롯데'?'selected':''}>롯데</option>
+      </select>
+    </td>
+    <td><input value="${c.last4||''}" maxlength="4" style="width:70px;text-align:center" onchange="updateCardField('${c.id}','last4',this.value)"></td>
+    <td><input value="${c.card_limit||0}" inputmode="numeric" style="width:100%;text-align:right" onchange="updateCardField('${c.id}','card_limit',parseInt(this.value.replace(/[^0-9]/g,''))||0)"></td>
+    <td><button class="btn btn-sm" style="color:var(--danger)" onclick="deleteCardWeb('${c.id}')">삭제</button></td>
+  </tr>`).join('');
+}
+async function updateCardField(id,field,value){
+  const payload={}; payload[field]=value;
+  const {error}=await sb.from('cards_shared').update(payload).eq('id',id);
+  if(error){ alert('저장 실패: '+error.message); return; }
+  const c=_settingsCards.find(x=>x.id===id);
+  if(c) c[field]=value;
+}
+async function deleteCardWeb(id){
+  if(!confirm('이 카드를 삭제하시겠습니까?')) return;
+  const {error}=await sb.from('cards_shared').delete().eq('id',id);
+  if(error){ alert('삭제 실패: '+error.message); return; }
+  loadSettings();
+}
+async function addCardWeb(){
+  const name=document.getElementById('new-card-name').value.trim();
+  const dept=document.getElementById('new-card-dept').value.trim();
+  const issuer=document.getElementById('new-card-issuer').value;
+  const last4=document.getElementById('new-card-last4').value.trim();
+  const limit=parseInt(document.getElementById('new-card-limit').value.replace(/[^0-9]/g,''))||0;
+  if(!name){ alert('카드명을 입력해주세요.'); return; }
+  const id='card_'+Date.now()+Math.random().toString(36).slice(2,6);
+  const {error}=await sb.from('cards_shared').insert([{id,name,dept,issuer,last4,card_limit:limit}]);
+  if(error){ alert('추가 실패: '+error.message); return; }
+  document.getElementById('new-card-name').value='';
+  document.getElementById('new-card-dept').value='';
+  document.getElementById('new-card-last4').value='';
+  document.getElementById('new-card-limit').value='';
+  loadSettings();
 }
 
 // ===== 계정별원장 =====
