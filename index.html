@@ -362,6 +362,17 @@
   <div class="page" id="page-settings">
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="card-title" style="margin-bottom:0">부서명 관리</div>
+      </div>
+      <div class="status-msg" id="dept-status"></div>
+      <div id="dept-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
+      <div style="display:flex;gap:8px">
+        <input id="new-dept-name" placeholder="새 부서명" style="width:200px">
+        <button class="btn btn-primary btn-sm" onclick="addDeptWeb()">추가</button>
+      </div>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div class="card-title" style="margin-bottom:0">카드 관리 (이름 · 부서 · 한도)</div>
         <button class="btn" onclick="loadSettings()">새로고침</button>
       </div>
@@ -870,6 +881,42 @@ async function loadSettings(){
   _settingsCards=data||[];
   document.getElementById('settings-status').textContent=`카드 ${_settingsCards.length}건`;
   renderSettingsCards();
+  loadDeptsWeb();
+}
+
+// ===== 설정: 부서명 관리 =====
+let _deptList=[];
+async function loadDeptsWeb(){
+  document.getElementById('dept-status').textContent='불러오는 중...';
+  const {data,error}=await sb.from('departments_shared').select('*').order('name');
+  if(error){ document.getElementById('dept-status').textContent='오류: '+error.message; return; }
+  _deptList=data||[];
+  document.getElementById('dept-status').textContent=`부서 ${_deptList.length}개`;
+  renderDeptsWeb();
+}
+function renderDeptsWeb(){
+  document.getElementById('dept-chips').innerHTML=_deptList.map(d=>
+    `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 6px 3px 10px;border-radius:99px;font-size:12px;font-weight:600;border:1px solid var(--primary);color:var(--primary);background:var(--primary-light)">
+      ${d.name}<span onclick="removeDeptWeb('${d.id}')" title="삭제" style="cursor:pointer;color:var(--text3);font-weight:700;padding:0 2px">✕</span>
+    </span>`
+  ).join('')||'<span style="color:var(--text3);font-size:13px">등록된 부서가 없습니다.</span>';
+}
+async function addDeptWeb(){
+  const input=document.getElementById('new-dept-name');
+  const name=input.value.trim();
+  if(!name) return;
+  if(_deptList.some(d=>d.name===name)){ alert('이미 존재하는 부서명입니다.'); return; }
+  const id='dept_'+Date.now()+Math.random().toString(36).slice(2,6);
+  const {error}=await sb.from('departments_shared').insert([{id,name}]);
+  if(error){ alert('추가 실패: '+error.message); return; }
+  input.value='';
+  loadDeptsWeb();
+}
+async function removeDeptWeb(id){
+  if(!confirm('이 부서명을 삭제하시겠습니까?')) return;
+  const {error}=await sb.from('departments_shared').delete().eq('id',id);
+  if(error){ alert('삭제 실패: '+error.message); return; }
+  loadDeptsWeb();
 }
 function renderSettingsCards(){
   const tbody=document.getElementById('settings-cards-body');
