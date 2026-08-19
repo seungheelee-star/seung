@@ -393,7 +393,7 @@
           <tfoot>
             <tr style="background:var(--primary-light)">
               <td><input id="new-card-name" placeholder="카드명" style="width:100%"></td>
-              <td><input id="new-card-dept" placeholder="부서" style="width:100%"></td>
+              <td><input id="new-card-dept" placeholder="부서" list="dept-datalist" style="width:100%"></td>
               <td>
                 <select id="new-card-issuer" style="width:100%">
                   <option value="신한/고위드">신한/고위드</option>
@@ -408,6 +408,7 @@
           </tfoot>
         </table>
       </div>
+      <datalist id="dept-datalist"></datalist>
     </div>
   </div>
 </div>
@@ -900,6 +901,8 @@ function renderDeptsWeb(){
       ${d.name}<span onclick="removeDeptWeb('${d.id}')" title="삭제" style="cursor:pointer;color:var(--text3);font-weight:700;padding:0 2px">✕</span>
     </span>`
   ).join('')||'<span style="color:var(--text3);font-size:13px">등록된 부서가 없습니다.</span>';
+  const dl=document.getElementById('dept-datalist');
+  if(dl) dl.innerHTML=_deptList.map(d=>`<option value="${d.name}">`).join('');
 }
 async function addDeptWeb(){
   const input=document.getElementById('new-dept-name');
@@ -922,7 +925,7 @@ function renderSettingsCards(){
   const tbody=document.getElementById('settings-cards-body');
   tbody.innerHTML=_settingsCards.map(c=>`<tr>
     <td><input value="${c.name||''}" onchange="updateCardField('${c.id}','name',this.value)" style="width:100%"></td>
-    <td><input value="${c.dept||''}" onchange="updateCardField('${c.id}','dept',this.value)" style="width:100%"></td>
+    <td><input value="${c.dept||''}" list="dept-datalist" onchange="updateCardField('${c.id}','dept',this.value)" style="width:100%"></td>
     <td>
       <select onchange="updateCardField('${c.id}','issuer',this.value)">
         <option value="신한/고위드" ${c.issuer==='신한/고위드'?'selected':''}>신한/고위드</option>
