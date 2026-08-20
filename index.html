@@ -544,11 +544,12 @@ async function syncGowid(){
         category:'', memo:item.memo||''
       };
     });
-    for(let i=0;i<payload.length;i+=500){
-      const {error}=await sb.from('tx_shared').upsert(payload.slice(i,i+500),{onConflict:'id'});
+    const dedupedPayload=dedupeByIdW(payload);
+    for(let i=0;i<dedupedPayload.length;i+=500){
+      const {error}=await sb.from('tx_shared').upsert(dedupedPayload.slice(i,i+500),{onConflict:'id'});
       if(error) throw error;
     }
-    document.getElementById('tx-status').textContent=`✅ 고위드 동기화 완료: ${payload.length}건`;
+    document.getElementById('tx-status').textContent=`✅ 고위드 동기화 완료: ${dedupedPayload.length}건`;
     loadTx();
   }catch(e){
     document.getElementById('tx-status').textContent='⚠️ 오류: '+e.message;
@@ -559,6 +560,12 @@ async function syncGowid(){
 }
 
 // ===== 엑셀 업로드 (파싱 헬퍼) =====
+// 한 파일 안에 동일 id가 여러 번 나오면 upsert 한 배치 안에서 충돌하므로, 업로드 직전 항상 id 기준으로 중복 제거(마지막 값 유지)
+function dedupeByIdW(payload){
+  const map=new Map();
+  payload.forEach(row=>map.set(row.id,row));
+  return [...map.values()];
+}
 function getColW(row, headers, ...keywords){
   const norms=keywords.map(k=>k.replace(/[\s\(\)（）]/g,'').toLowerCase());
   for(const h of headers){
@@ -729,11 +736,12 @@ async function parseLotteW(wb,batchId){
       amount:amt, category:String(getColW(row,headers,'가맹점업종','업종명','업종')||'').trim(), memo:'', batch_id:batchId
     });
   });
-  for(let i=0;i<payload.length;i+=500){
-    const {error}=await sb.from('tx_shared').upsert(payload.slice(i,i+500),{onConflict:'id'});
+  const dedupedPayload=dedupeByIdW(payload);
+  for(let i=0;i<dedupedPayload.length;i+=500){
+    const {error}=await sb.from('tx_shared').upsert(dedupedPayload.slice(i,i+500),{onConflict:'id'});
     if(error) throw error;
   }
-  return {count:payload.length};
+  return {count:dedupedPayload.length};
 }
 
 async function parseShinhanW(wb,batchId){
@@ -761,11 +769,12 @@ async function parseShinhanW(wb,batchId){
       amount:amt, category:String(getColW(row,headers,'가맹점업종명','업종명','업종')||'').trim(), memo:'', batch_id:batchId
     });
   });
-  for(let i=0;i<payload.length;i+=500){
-    const {error}=await sb.from('tx_shared').upsert(payload.slice(i,i+500),{onConflict:'id'});
+  const dedupedPayload=dedupeByIdW(payload);
+  for(let i=0;i<dedupedPayload.length;i+=500){
+    const {error}=await sb.from('tx_shared').upsert(dedupedPayload.slice(i,i+500),{onConflict:'id'});
     if(error) throw error;
   }
-  return {count:payload.length};
+  return {count:dedupedPayload.length};
 }
 
 async function parseCardAllW(wb,batchId){
@@ -797,11 +806,12 @@ async function parseCardAllW(wb,batchId){
       approval_no:approvalNo, amount:amt, is_foreign:region==='해외', region, batch_id:batchId
     });
   });
-  for(let i=0;i<payload.length;i+=500){
-    const {error}=await sb.from('card_stmt_shared').upsert(payload.slice(i,i+500),{onConflict:'id'});
+  const dedupedPayload=dedupeByIdW(payload);
+  for(let i=0;i<dedupedPayload.length;i+=500){
+    const {error}=await sb.from('card_stmt_shared').upsert(dedupedPayload.slice(i,i+500),{onConflict:'id'});
     if(error) throw error;
   }
-  return {count:payload.length};
+  return {count:dedupedPayload.length};
 }
 
 async function parseLedgerW(wb,fname,batchId){
@@ -836,11 +846,12 @@ async function parseLedgerW(wb,fname,batchId){
       const id='ld_'+(voucherNo?voucherNo+'_'+date+'_'+credit:`${date}_${partner}_${credit}_${debit}_${Math.random().toString(36).slice(2,6)}`);
       payload.push({id,date,desc_text:desc,partner,last4,issuer,debit,credit,voucher_no:voucherNo,dept,account_type:accountType,batch_id:batchId});
     });
-    for(let i=0;i<payload.length;i+=500){
-      const {error}=await sb.from('ledger_shared').upsert(payload.slice(i,i+500),{onConflict:'id'});
+    const dedupedPayload=dedupeByIdW(payload);
+    for(let i=0;i<dedupedPayload.length;i+=500){
+      const {error}=await sb.from('ledger_shared').upsert(dedupedPayload.slice(i,i+500),{onConflict:'id'});
       if(error) throw error;
     }
-    totalCount+=payload.length;
+    totalCount+=dedupedPayload.length;
   }
   return {count:totalCount};
 }
@@ -866,11 +877,12 @@ async function parseWihagoW(wb,batchId){
     const id='wh_'+(user+'_'+datetimeRaw+'_'+amount+'_'+content).replace(/\s+/g,'').slice(0,80);
     payload.push({id,user_name:user,dept,content,category,partner,month,date,amount,status,batch_id:batchId});
   });
-  for(let i=0;i<payload.length;i+=500){
-    const {error}=await sb.from('wihago_shared').upsert(payload.slice(i,i+500),{onConflict:'id'});
+  const dedupedPayload=dedupeByIdW(payload);
+  for(let i=0;i<dedupedPayload.length;i+=500){
+    const {error}=await sb.from('wihago_shared').upsert(dedupedPayload.slice(i,i+500),{onConflict:'id'});
     if(error) throw error;
   }
-  return {count:payload.length};
+  return {count:dedupedPayload.length};
 }
 
 function switchTab(t){
