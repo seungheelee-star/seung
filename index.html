@@ -424,23 +424,40 @@
 
   <!-- 리더활동비 -->
   <div class="page" id="page-lb">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        <div>
+          <div style="font-size:16px;font-weight:700">리더활동비 정산</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">예산 5만원/인/월 · 분기 단위 사용 · 분기 내 1개월만 잔액 이월 가능 · 중도입사(1~26일) 전액 지급 · 중도퇴사(1~26일) 일할 차감</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label style="font-size:12px;color:var(--text2)">예산/인</label>
+          <input type="text" id="lb-budget-per-person" value="50000" style="width:90px" onchange="renderLb()">
+          <select id="lb-year" onchange="renderLb()">
+            <option value="2026">2026년</option>
+            <option value="2025">2025년</option>
+          </select>
+          <button class="btn" onclick="exportLbWeb()">📥 엑셀 다운로드</button>
+          <button class="btn" onclick="loadLb()">새로고침</button>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--text3)">팀 표시:</span>
+        <div id="lb-team-toggles" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      </div>
+    </div>
+
+    <div id="lb-kpi" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px"></div>
+
     <div class="card" style="padding:0;overflow:hidden">
       <div style="display:flex;align-items:center;gap:2px;padding:14px 16px 0;border-bottom:1px solid var(--border)">
         <div class="lb-subtab active" data-lbtab="인원입력" onclick="lbSetTab('인원입력')">인원입력</div>
         <div class="lb-subtab" data-lbtab="사용액입력" onclick="lbSetTab('사용액입력')">사용액입력</div>
         <div class="lb-subtab" data-lbtab="월별정산" onclick="lbSetTab('월별정산')">월별정산</div>
         <div class="lb-subtab" data-lbtab="이월현황" onclick="lbSetTab('이월현황')">이월현황</div>
-        <span style="flex:1"></span>
-        <label style="font-size:12px;color:var(--text2)">연도</label>
-        <select id="lb-year" onchange="renderLb()">
-          <option value="2026">2026년</option>
-          <option value="2025">2025년</option>
-        </select>
-        <button class="btn" onclick="exportLbWeb()">📥 엑셀 다운로드</button>
-        <button class="btn" onclick="loadLb()">새로고침</button>
       </div>
       <div style="padding:14px 16px">
-        <div class="status-msg">예산 5만원/인/월 · 분기 내 1개월만 잔액 이월 가능. 입력 후 다른 칸을 클릭하면 자동 저장됩니다.</div>
+        <div class="status-msg">입력 후 다른 칸을 클릭하면 자동 저장됩니다.</div>
         <div style="overflow-x:auto">
           <table class="lb-table">
             <thead id="lb-thead"></thead>
@@ -2303,14 +2320,48 @@ async function saveLcMemo(rowKey,memo){
 const LB_DEFAULT_TEAMS=['사업부','마케팅챕터','브랜드디자인챕터','PBO','BM챕터'];
 let LB_TEAMS=[...LB_DEFAULT_TEAMS];
 let _lbData={};
+// 팀 표시 목록: 이 브라우저에 저장되는 개인 설정(로컬 대시보드와 동일한 방식) + 실제 데이터에 있는 팀은 항상 표시
+function lbGetTeamsWeb(){
+  let list=JSON.parse(localStorage.getItem('lb_teams')||'null');
+  if(!Array.isArray(list)||!list.length) list=[...LB_DEFAULT_TEAMS];
+  Object.keys(_lbData).forEach(t=>{ if(!list.includes(t)) list.push(t); });
+  return [...new Set(list.map(t=>(t||'').trim()).filter(Boolean))];
+}
+function lbSetTeamsWeb(list){ localStorage.setItem('lb_teams',JSON.stringify(list)); }
+function lbRenameTeamWeb(oldName){
+  const newName=(prompt('새 팀 이름을 입력하세요',oldName)||'').trim();
+  if(!newName||newName===oldName) return;
+  const teams=lbGetTeamsWeb();
+  if(teams.includes(newName)){ alert('이미 존재하는 팀 이름입니다.'); return; }
+  lbSetTeamsWeb(teams.map(t=>t===oldName?newName:t));
+  LB_TEAMS=lbGetTeamsWeb();
+  renderLb();
+}
+function lbRemoveTeamWeb(team){
+  if(!confirm(`"${team}" 팀을 리더활동비 화면에서 제외하시겠습니까?\n(데이터는 삭제되지 않고 보존되며, 나중에 다시 추가하면 그대로 돌아옵니다)`)) return;
+  lbSetTeamsWeb(lbGetTeamsWeb().filter(t=>t!==team));
+  LB_TEAMS=lbGetTeamsWeb();
+  renderLb();
+}
+function lbAddTeamFromSelectWeb(sel){
+  let v=sel.value;
+  if(!v) return;
+  if(v==='__custom__'){
+    v=(prompt('추가할 팀 이름을 입력하세요','')||'').trim();
+    if(!v){ sel.value=''; return; }
+  }
+  const list=lbGetTeamsWeb();
+  if(!list.includes(v)) list.push(v);
+  lbSetTeamsWeb(list);
+  LB_TEAMS=lbGetTeamsWeb();
+  renderLb();
+}
 async function loadLb(){
   const {data,error}=await sb.from('lb_shared_monthly').select('*');
   if(error){ alert('오류: '+error.message); return; }
   _lbData={};
   (data||[]).forEach(d=>{ if(!_lbData[d.team]) _lbData[d.team]={}; _lbData[d.team][d.month]=d; });
-  const teamSet=new Set(LB_DEFAULT_TEAMS);
-  Object.keys(_lbData).forEach(t=>teamSet.add(t));
-  LB_TEAMS=[...teamSet];
+  LB_TEAMS=lbGetTeamsWeb();
   renderLb();
 }
 function lbMonths(){
@@ -2350,7 +2401,7 @@ function lbParseRoster(text,bpp,mo){
 // 로컬 대시보드와 동일한 규칙으로 예산/이월/잔액 계산
 function lbCalc(){
   const months=lbMonths();
-  const bpp=50000;
+  const bpp=parseInt(document.getElementById('lb-budget-per-person').value.replace(/[^0-9]/g,''))||50000;
   const result={};
   LB_TEAMS.forEach(team=>{
     result[team]={};
@@ -2385,7 +2436,25 @@ function lbSetTab(t){
   document.querySelectorAll('.lb-subtab').forEach(el=>el.classList.toggle('active',el.dataset.lbtab===t));
   renderLb();
 }
+function renderLbTeamToggles(){
+  const el=document.getElementById('lb-team-toggles');
+  if(!el) return;
+  const current=lbGetTeamsWeb();
+  const depts=(_deptList||[]).map(d=>d.name);
+  const available=[...new Set([...depts,...current])].filter(d=>!current.includes(d));
+  el.innerHTML=current.map(team=>
+    `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 6px 3px 10px;border-radius:99px;font-size:11px;font-weight:600;border:1px solid #1e40af;color:#1e40af;background:#eff6ff">
+      <span onclick="lbRenameTeamWeb('${team}')" title="클릭하여 이름 수정" style="cursor:pointer">${team}</span><span onclick="lbRemoveTeamWeb('${team}')" title="이 팀 제외 (데이터는 보존됨)" style="cursor:pointer;color:#94a3b8;font-weight:700;padding:0 2px">✕</span>
+    </span>`
+  ).join('')+`
+  <select onchange="lbAddTeamFromSelectWeb(this)">
+    <option value="">+ 팀 추가</option>
+    ${available.map(d=>`<option value="${d}">${d}</option>`).join('')}
+    <option value="__custom__">직접 입력...</option>
+  </select>`;
+}
 function renderLb(){
+  renderLbTeamToggles();
   const {result,months}=lbCalc();
   const thead=document.getElementById('lb-thead');
   const tbody=document.getElementById('lb-tbody');
@@ -2450,7 +2519,35 @@ function renderLb(){
       </tr>`;
     });
   });
+  // 합계 행
+  html+=rows.map((rd,ri)=>{
+    const isLast=ri===rows.length-1;
+    const teamCell=ri===0?`<td rowspan="${rows.length}" style="${tdFixed};left:0;background:#e2e8f0;font-weight:700;vertical-align:middle;border-bottom:2px solid var(--border)">합계</td>`:'';
+    const labelStyle=`${tdFixed};left:110px;background:#f1f5f9;font-weight:600${isLast?';border-bottom:2px solid var(--border)':''}`;
+    const cells=months.map(m=>{
+      if(rd.edit==='roster') return `<td style="${tdBase};background:#f1f5f9"></td>`;
+      const total=LB_TEAMS.reduce((s,t)=>s+(result[t][m][rd.key]||0),0);
+      const zanColor=rd.key==='zan'&&total<0?'color:#ef4444':'';
+      return `<td style="${tdBase};background:#f1f5f9;font-weight:700;${zanColor}${isLast?';border-bottom:2px solid var(--border)':''}">${fmt(total)}</td>`;
+    }).join('');
+    return `<tr>${teamCell}<td style="${labelStyle}">${rd.label}</td>${cells}</tr>`;
+  }).join('');
   tbody.innerHTML=html;
+
+  // KPI
+  const totalBudget=LB_TEAMS.reduce((s,t)=>s+months.reduce((ss,mo)=>ss+(result[t][mo].budget||0),0),0);
+  const totalUsed=LB_TEAMS.reduce((s,t)=>s+months.reduce((ss,mo)=>ss+(result[t][mo].used||0),0),0);
+  const totalZan=LB_TEAMS.reduce((s,t)=>s+(result[t][months[months.length-1]]?.zan||0),0);
+  const totalCarry=LB_TEAMS.reduce((s,t)=>s+months.reduce((ss,mo)=>ss+(result[t][mo].carry||0),0),0);
+  document.getElementById('lb-kpi').innerHTML=[
+    {label:'총 예산',color:'#1e40af',bg:'#eff6ff',val:totalBudget},
+    {label:'총 사용액',color:'#991b1b',bg:'#fef2f2',val:totalUsed},
+    {label:'누적 이월액',color:'#92400e',bg:'#fefce8',val:totalCarry},
+    {label:'최종 잔액',color:totalZan>=0?'#166534':'#ef4444',bg:totalZan>=0?'#f0fdf4':'#fef2f2',val:totalZan}
+  ].map(k=>`<div class="card" style="margin-bottom:0;padding:14px 16px;border-left:3px solid ${k.color};background:${k.bg}">
+    <div style="font-size:11px;color:${k.color};font-weight:600;margin-bottom:4px">${k.label}</div>
+    <div style="font-size:16px;font-weight:700;color:${k.color}">${fmt(k.val)}원</div>
+  </div>`).join('');
 }
 async function saveLbCell(team,month,key,value){
   const payload={team,month};
