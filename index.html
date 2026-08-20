@@ -193,6 +193,7 @@
     <div class="card">
       <div class="filters">
         <button class="btn" onclick="loadWihago()">새로고침</button>
+        <button class="btn" onclick="cleanupWihagoDupes()" title="완전히 동일한 내역이 중복 업로드된 경우 자동으로 찾아서 정리">🧹 중복 정리</button>
         <span style="flex:1"></span>
         <span class="status-msg" id="wh-status" style="margin:0"></span>
       </div>
@@ -1260,6 +1261,31 @@ async function loadWihago(){
   refreshDeptFilterOptions(all.map(r=>r.dept));
   document.getElementById('wh-status').textContent=`총 ${_whRows.length}건`;
   renderWihago();
+}
+// 완전히 동일한 내역(사용자·소속·내용·용도·거래처·귀속월·일시·금액이 전부 일치)이 서로 다른 id로 중복 업로드된 경우, 하나만 남기고 서버에서 정리
+async function cleanupWihagoDupes(){
+  if(!_whRows.length){ alert('먼저 위하고 경비 데이터를 불러와주세요.'); return; }
+  const seen=new Map();
+  const dupeIds=[];
+  _whRows.forEach(r=>{
+    const key=[r.user_name,r.dept,r.content,r.category,r.partner,r.month,r.date,r.amount].join('||');
+    if(seen.has(key)) dupeIds.push(r.id);
+    else seen.set(key,r.id);
+  });
+  if(!dupeIds.length){ alert('중복된 내역이 없습니다.'); return; }
+  if(!confirm(`완전히 동일한 내역 ${dupeIds.length}건을 발견했습니다. 중복분을 삭제할까요? (원본 1건씩은 남습니다)`)) return;
+  document.getElementById('wh-status').textContent=`⏳ 중복 ${dupeIds.length}건 정리 중...`;
+  try{
+    for(let i=0;i<dupeIds.length;i+=200){
+      const chunk=dupeIds.slice(i,i+200);
+      const {error}=await sb.from('wihago_shared').delete().in('id',chunk);
+      if(error) throw error;
+    }
+    alert(`중복 ${dupeIds.length}건을 정리했습니다.`);
+    loadWihago();
+  }catch(e){
+    alert('정리 실패: '+e.message);
+  }
 }
 let _whTab='dept', _whChartInst=null, _whMonthSel='';
 function whSetTab(t){
