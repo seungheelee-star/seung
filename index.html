@@ -1460,10 +1460,31 @@ async function loadCards(){
   document.getElementById('cards-status').textContent=`카드 ${_cardsList.length}건`;
   renderCards();
 }
+function checkCardUsageAlertsWeb(cards,selMonth){
+  const monthKey=selMonth||new Date().toISOString().slice(0,7);
+  const notified=JSON.parse(localStorage.getItem('card_alert_notified')||'{}');
+  const newAlerts=[];
+  cards.forEach(c=>{
+    const used=_cardsTxAll.filter(t=>t.last4===c.last4&&(!selMonth||(t.date||'').startsWith(selMonth))).reduce((s,t)=>s+(t.amount||0),0);
+    const limit=c.card_limit||0;
+    const pct=limit>0?(used/limit*100):0;
+    const key=`${c.id}_${monthKey}`;
+    if(pct>=50&&!notified[key]){
+      newAlerts.push({name:c.name,pct});
+      notified[key]=true;
+    }
+  });
+  if(newAlerts.length){
+    localStorage.setItem('card_alert_notified',JSON.stringify(notified));
+    const lines=newAlerts.map(a=>`${a.name}: ${a.pct.toFixed(1)}%`).join('\n');
+    alert(`⚠️ 소진율 50% 이상 카드\n\n${lines}`);
+  }
+}
 function renderCards(){
   const month=document.getElementById('cards-month').value;
   const el=document.getElementById('cards-list');
   if(!_cardsList.length){ el.innerHTML='<div class="empty">공유된 카드 정보가 없습니다. 로컬 대시보드에서 "공유 서버에 카드 정보 반영"을 먼저 실행해주세요.</div>'; return; }
+  checkCardUsageAlertsWeb(_cardsList,month);
   el.innerHTML=_cardsList.map(c=>{
     const used=_cardsTxAll.filter(t=>t.last4===c.last4&&(!month||(t.date||'').startsWith(month))).reduce((s,t)=>s+(t.amount||0),0);
     const limit=c.card_limit||0;
