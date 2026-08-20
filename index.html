@@ -283,10 +283,17 @@
     <div class="card">
       <div class="filters">
         <input type="month" id="cards-month" onchange="renderCards()">
+        <select id="cards-issuer-filter" onchange="renderCards()">
+          <option value="">전체 카드사</option>
+          <option value="신한/고위드">신한/고위드</option>
+          <option value="신한(미연동)">신한(미연동)</option>
+          <option value="롯데">롯데</option>
+        </select>
         <span style="flex:1"></span>
         <button class="btn" onclick="loadCards()">새로고침</button>
       </div>
       <div class="status-msg" id="cards-status"></div>
+      <div id="cards-issuer-summary" style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:12px"></div>
       <div id="cards-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px"></div>
     </div>
   </div>
@@ -446,28 +453,37 @@
 
   <!-- 엑셀 업로드 -->
   <div class="page" id="page-upload">
-    <div class="card">
-      <div class="setting-label" style="font-weight:700;margin-bottom:10px">롯데카드 승인내역</div>
+    <div style="display:flex;gap:2px;margin-bottom:14px;flex-wrap:wrap">
+      <div class="lb-subtab active" data-uploadtab="lotte" onclick="setUploadTabWeb('lotte')">롯데카드 승인내역</div>
+      <div class="lb-subtab" data-uploadtab="shinhan" onclick="setUploadTabWeb('shinhan')">신한카드 승인내역</div>
+      <div class="lb-subtab" data-uploadtab="card_all" onclick="setUploadTabWeb('card_all')">법인카드이용대금명세서</div>
+      <div class="lb-subtab" data-uploadtab="ledger" onclick="setUploadTabWeb('ledger')">계정별원장</div>
+      <div class="lb-subtab" data-uploadtab="wihago" onclick="setUploadTabWeb('wihago')">위하고(더존ERP)</div>
+    </div>
+    <div class="card" id="upload-tab-lotte">
+      <div class="setting-label" style="font-weight:700;margin-bottom:10px">롯데카드 승인내역 업로드</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px">컬럼: 카드번호, 매입일자, 매입시간, 가맹점명, 매입금액, 승인번호, 가맹점업종, 국내외사용구분</div>
       <input type="file" id="file-lotte" accept=".xlsx,.xls,.csv" onchange="handleUploadWeb(event,'lotte')">
       <div id="res-lotte" class="status-msg"></div>
     </div>
-    <div class="card">
-      <div class="setting-label" style="font-weight:700;margin-bottom:10px">신한카드 승인내역</div>
+    <div class="card" id="upload-tab-shinhan" style="display:none">
+      <div class="setting-label" style="font-weight:700;margin-bottom:10px">신한카드 승인내역 업로드</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px">컬럼: 카드번호, 사용구분, 승인번호, 승인일자, 승인시간, 승인금액(원화), 가맹점명, 가맹점업종명</div>
       <input type="file" id="file-shinhan" accept=".xlsx,.xls,.csv" onchange="handleUploadWeb(event,'shinhan')">
       <div id="res-shinhan" class="status-msg"></div>
     </div>
-    <div class="card">
-      <div class="setting-label" style="font-weight:700;margin-bottom:10px">법인카드이용대금명세서</div>
+    <div class="card" id="upload-tab-card_all" style="display:none">
+      <div class="setting-label" style="font-weight:700;margin-bottom:10px">법인카드이용대금명세서 업로드</div>
       <input type="file" id="file-cardall" accept=".xlsx,.xls,.csv" onchange="handleUploadWeb(event,'card_all')">
       <div id="res-card_all" class="status-msg"></div>
     </div>
-    <div class="card">
-      <div class="setting-label" style="font-weight:700;margin-bottom:10px">계정별원장</div>
+    <div class="card" id="upload-tab-ledger" style="display:none">
+      <div class="setting-label" style="font-weight:700;margin-bottom:10px">계정별원장 업로드</div>
       <input type="file" id="file-ledger" accept=".xlsx,.xls,.csv" onchange="handleUploadWeb(event,'ledger')">
       <div id="res-ledger" class="status-msg"></div>
     </div>
-    <div class="card">
-      <div class="setting-label" style="font-weight:700;margin-bottom:10px">위하고(더존ERP)</div>
+    <div class="card" id="upload-tab-wihago" style="display:none">
+      <div class="setting-label" style="font-weight:700;margin-bottom:10px">위하고(더존ERP) 업로드</div>
       <input type="file" id="file-wihago-up" accept=".xlsx,.xls,.csv" onchange="handleUploadWeb(event,'wihago')">
       <div id="res-wihago" class="status-msg"></div>
     </div>
@@ -825,6 +841,12 @@ function sheetToRowsW(rawArr, headerIdx){
   return {headers, rows: dataRows.map(r=>{ const o={}; headers.forEach((h,i)=>{o[h]=r[i]===undefined?'':r[i];}); return o; })};
 }
 
+function setUploadTabWeb(t){
+  document.querySelectorAll('.lb-subtab[data-uploadtab]').forEach(el=>el.classList.toggle('active',el.dataset.uploadtab===t));
+  ['lotte','shinhan','card_all','ledger','wihago'].forEach(k=>{
+    document.getElementById('upload-tab-'+k).style.display=k===t?'':'none';
+  });
+}
 const UPLOAD_TABLE_MAP={lotte:'tx_shared',shinhan:'tx_shared',card_all:'card_stmt_shared',ledger:'ledger_shared',wihago:'wihago_shared'};
 const UPLOAD_TYPE_LABEL={lotte:'롯데카드 승인내역',shinhan:'신한카드 승인내역',card_all:'법인카드이용대금명세서',ledger:'계정별원장',wihago:'위하고(더존ERP)'};
 async function handleUploadWeb(event,type){
@@ -1747,20 +1769,44 @@ function checkCardUsageAlertsWeb(cards,selMonth){
 }
 function renderCards(){
   const month=document.getElementById('cards-month').value;
+  const issuerF=document.getElementById('cards-issuer-filter').value;
   const el=document.getElementById('cards-list');
-  if(!_cardsList.length){ el.innerHTML='<div class="empty">공유된 카드 정보가 없습니다. 로컬 대시보드에서 "공유 서버에 카드 정보 반영"을 먼저 실행해주세요.</div>'; return; }
-  checkCardUsageAlertsWeb(_cardsList,month);
-  el.innerHTML=_cardsList.map(c=>{
-    const used=_cardsTxAll.filter(t=>t.last4===c.last4&&(!month||(t.date||'').startsWith(month))).reduce((s,t)=>s+(t.amount||0),0);
+  const summaryEl=document.getElementById('cards-issuer-summary');
+  if(!_cardsList.length){ el.innerHTML='<div class="empty">공유된 카드 정보가 없습니다. 로컬 대시보드에서 "공유 서버에 카드 정보 반영"을 먼저 실행해주세요.</div>'; summaryEl.innerHTML=''; return; }
+  const cards=_cardsList.filter(c=>!issuerF||c.issuer===issuerF);
+  checkCardUsageAlertsWeb(cards,month);
+  const usedFor=(c,m)=>_cardsTxAll.filter(t=>t.last4===c.last4&&(!m||(t.date||'').startsWith(m))).reduce((s,t)=>s+(t.amount||0),0);
+
+  if(!issuerF){
+    const issuers=[...new Set(_cardsList.map(c=>c.issuer))];
+    summaryEl.innerHTML=issuers.map(iss=>{
+      const issCards=_cardsList.filter(c=>c.issuer===iss);
+      const total=issCards.reduce((s,c)=>s+usedFor(c,month),0);
+      const limitTotal=issCards.reduce((s,c)=>s+(c.card_limit||0),0);
+      return `<div class="card" style="flex:1;min-width:200px;margin-bottom:0">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:6px">${iss}</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:2px">${month?month+' 이용액':'이번 달 이용액'}</div>
+        <div style="font-size:20px;font-weight:700">${fmt(total)}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">한도합계 ${fmt(limitTotal)}</div>
+      </div>`;
+    }).join('');
+  } else {
+    summaryEl.innerHTML='';
+  }
+
+  el.innerHTML=cards.map(c=>{
+    const used=usedFor(c,month);
     const limit=c.card_limit||0;
     const pct=limit>0?(used/limit*100):0;
     const color=pct>=90?'var(--danger)':pct>=50?'var(--warning)':'var(--success)';
+    const badge=pct>=80?`<span class="badge" style="background:#fee2e2;color:var(--danger)">위험</span>`:pct>=50?`<span class="badge" style="background:#fef3c7;color:var(--warning)">주의</span>`:'';
     return `<div class="card" style="margin-bottom:0">
       <div style="display:flex;justify-content:space-between;margin-bottom:8px">
         <div>
           <div style="font-weight:700;font-size:13px">${c.name}</div>
           <div style="font-size:11px;color:var(--text2)">${c.dept} · ${c.issuer}</div>
         </div>
+        ${badge}
       </div>
       <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:6px">
         <span>사용: <strong style="color:var(--text)">${fmt(used)}</strong></span>
