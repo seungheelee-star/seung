@@ -97,25 +97,7 @@
     <div class="sb-logo-dot"></div>
     <span>법인카드·경비 관리</span>
   </div>
-  <div class="sb-nav">
-    <div class="tab active" data-tab="home" onclick="switchTab('home')">홈</div>
-
-    <div class="sb-section">법인카드관리</div>
-    <div class="tab" data-tab="cards" onclick="switchTab('cards')">카드별 현황</div>
-    <div class="tab" data-tab="tx" onclick="switchTab('tx')">이용내역</div>
-    <div class="tab" data-tab="monthly" onclick="switchTab('monthly')">부서별 지출현황</div>
-
-    <div class="sb-section">경비관리</div>
-    <div class="tab" data-tab="wihago" onclick="switchTab('wihago')">위하고 경비</div>
-    <div class="tab" data-tab="cs" onclick="switchTab('cs')">법인카드이용대금</div>
-    <div class="tab" data-tab="ledger" onclick="switchTab('ledger')">계정별원장</div>
-    <div class="tab" data-tab="lc" onclick="switchTab('lc')">대조현황 처리</div>
-    <div class="tab" data-tab="lb" onclick="switchTab('lb')">리더활동비 입력</div>
-
-    <div class="sb-section">시스템관리</div>
-    <div class="tab" data-tab="upload" onclick="switchTab('upload')">엑셀 업로드</div>
-    <div class="tab" data-tab="settings" onclick="switchTab('settings')">설정</div>
-  </div>
+  <div class="sb-nav" id="sb-nav-content"></div>
   <div class="sb-toggle" id="sidebarToggle">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
   </div>
@@ -442,6 +424,13 @@
   <!-- 설정 -->
   <div class="page" id="page-settings">
     <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="card-title" style="margin-bottom:0">메뉴 구성 (순서 · 이름) — 이 브라우저에만 적용</div>
+        <button class="btn btn-sm" onclick="sbResetMenuWeb()">기본값으로 초기화</button>
+      </div>
+      <div id="menu-settings-list"></div>
+    </div>
+    <div class="card">
       <div class="card-title">국세청 사업자등록정보 상태조회 API</div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:10px">공공데이터포털에서 발급받은 서비스키를 입력하면, 이용내역 탭에서 거래처 사업자 상태(휴폐업·과세유형)를 조회할 수 있어요. 이 키는 이 브라우저에만 저장돼요.</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -509,6 +498,120 @@
 const SUPABASE_URL='https://rqkkvpugddndzgcbaaqo.supabase.co';
 const SUPABASE_KEY='sb_publishable_rD4o24OUdMM3OIZxYNKIuA_2cMY_tDV';
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+// ===== 사이드바 메뉴 구성 (순서/이름 커스터마이징 가능, 브라우저별 저장) =====
+const SB_DEFAULT_WEB={
+  home:{tab:'home',label:'홈'},
+  groups:[
+    {id:'grp-card',label:'법인카드관리',items:[
+      {tab:'cards',label:'카드별 현황'},
+      {tab:'tx',label:'이용내역'},
+      {tab:'monthly',label:'부서별 지출현황'}
+    ]},
+    {id:'grp-expense',label:'경비관리',items:[
+      {tab:'wihago',label:'위하고 경비'},
+      {tab:'cs',label:'법인카드이용대금'},
+      {tab:'ledger',label:'계정별원장'},
+      {tab:'lc',label:'대조현황 처리'},
+      {tab:'lb',label:'리더활동비 입력'}
+    ]},
+    {id:'grp-system',label:'시스템관리',items:[
+      {tab:'upload',label:'엑셀 업로드'},
+      {tab:'settings',label:'설정'}
+    ]}
+  ]
+};
+function sbGetConfigWeb(){
+  const ov=JSON.parse(localStorage.getItem('menu_config')||'{}');
+  let groupOrder=(ov.groupOrder&&ov.groupOrder.length)?ov.groupOrder.filter(id=>SB_DEFAULT_WEB.groups.some(g=>g.id===id)):SB_DEFAULT_WEB.groups.map(g=>g.id);
+  SB_DEFAULT_WEB.groups.forEach(g=>{ if(!groupOrder.includes(g.id)) groupOrder.push(g.id); });
+  const groups=groupOrder.map(id=>{
+    const def=SB_DEFAULT_WEB.groups.find(g=>g.id===id);
+    const label=(ov.groupLabels&&ov.groupLabels[id])||def.label;
+    let order=(ov.itemOrder&&ov.itemOrder[id]&&ov.itemOrder[id].length)?ov.itemOrder[id].filter(p=>def.items.some(it=>it.tab===p)):def.items.map(it=>it.tab);
+    def.items.forEach(it=>{ if(!order.includes(it.tab)) order.push(it.tab); });
+    const items=order.map(t=>{
+      const itDef=def.items.find(it=>it.tab===t);
+      return {tab:t,label:(ov.itemLabels&&ov.itemLabels[t])||itDef.label};
+    });
+    return {id,label,items};
+  });
+  const homeLabel=(ov.itemLabels&&ov.itemLabels.home)||SB_DEFAULT_WEB.home.label;
+  return {home:{tab:'home',label:homeLabel},groups};
+}
+let _currentTab='home';
+function renderSidebarWeb(){
+  const cfg=sbGetConfigWeb();
+  let html=`<div class="tab" data-tab="home" onclick="switchTab('home')">${cfg.home.label}</div>`;
+  cfg.groups.forEach(g=>{
+    html+=`<div class="sb-section">${g.label}</div>`;
+    g.items.forEach(it=>{
+      html+=`<div class="tab" data-tab="${it.tab}" onclick="switchTab('${it.tab}')">${it.label}</div>`;
+    });
+  });
+  const navEl=document.getElementById('sb-nav-content');
+  navEl.innerHTML=html;
+  const activeEl=navEl.querySelector(`.tab[data-tab="${_currentTab}"]`);
+  if(activeEl) activeEl.classList.add('active');
+}
+function _sbSaveOverrideWeb(mutator){
+  const ov=JSON.parse(localStorage.getItem('menu_config')||'{}');
+  mutator(ov);
+  localStorage.setItem('menu_config',JSON.stringify(ov));
+  renderSidebarWeb();
+  renderMenuSettingsWeb();
+}
+function sbSetGroupLabelWeb(id,val){ _sbSaveOverrideWeb(ov=>{ if(!ov.groupLabels) ov.groupLabels={}; ov.groupLabels[id]=val; }); }
+function sbSetItemLabelWeb(tab,val){ _sbSaveOverrideWeb(ov=>{ if(!ov.itemLabels) ov.itemLabels={}; ov.itemLabels[tab]=val; }); }
+function sbMoveGroupWeb(id,dir){
+  const cfg=sbGetConfigWeb();
+  const order=cfg.groups.map(g=>g.id);
+  const i=order.indexOf(id), j=i+dir;
+  if(j<0||j>=order.length) return;
+  [order[i],order[j]]=[order[j],order[i]];
+  _sbSaveOverrideWeb(ov=>{ ov.groupOrder=order; });
+}
+function sbMoveItemWeb(groupId,tab,dir){
+  const cfg=sbGetConfigWeb();
+  const g=cfg.groups.find(x=>x.id===groupId);
+  if(!g) return;
+  const order=g.items.map(it=>it.tab);
+  const i=order.indexOf(tab), j=i+dir;
+  if(j<0||j>=order.length) return;
+  [order[i],order[j]]=[order[j],order[i]];
+  _sbSaveOverrideWeb(ov=>{ if(!ov.itemOrder) ov.itemOrder={}; ov.itemOrder[groupId]=order; });
+}
+function sbResetMenuWeb(){
+  if(!confirm('메뉴 순서와 이름을 기본값으로 되돌리시겠습니까?')) return;
+  localStorage.removeItem('menu_config');
+  renderSidebarWeb();
+  renderMenuSettingsWeb();
+}
+function renderMenuSettingsWeb(){
+  const el=document.getElementById('menu-settings-list');
+  if(!el) return;
+  const cfg=sbGetConfigWeb();
+  const inputStyle='style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;width:150px"';
+  let html=`<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg);border-radius:8px;margin-bottom:6px">
+    <span style="font-size:12px;font-weight:700;flex:1">🏠 홈</span>
+    <input value="${cfg.home.label}" ${inputStyle} onchange="sbSetItemLabelWeb('home',this.value)">
+  </div>`;
+  cfg.groups.forEach((g,gi)=>{
+    html+=`<div style="margin-top:10px;margin-bottom:4px;display:flex;align-items:center;gap:6px">
+      <button class="btn btn-sm" onclick="sbMoveGroupWeb('${g.id}',-1)" ${gi===0?'disabled':''}>▲</button>
+      <button class="btn btn-sm" onclick="sbMoveGroupWeb('${g.id}',1)" ${gi===cfg.groups.length-1?'disabled':''}>▼</button>
+      <input value="${g.label}" ${inputStyle} style="font-weight:700" onchange="sbSetGroupLabelWeb('${g.id}',this.value)">
+    </div>`;
+    g.items.forEach((it,ii)=>{
+      html+=`<div style="display:flex;align-items:center;gap:6px;padding:4px 8px 4px 24px">
+        <button class="btn btn-sm" onclick="sbMoveItemWeb('${g.id}','${it.tab}',-1)" ${ii===0?'disabled':''}>▲</button>
+        <button class="btn btn-sm" onclick="sbMoveItemWeb('${g.id}','${it.tab}',1)" ${ii===g.items.length-1?'disabled':''}>▼</button>
+        <input value="${it.label}" ${inputStyle} onchange="sbSetItemLabelWeb('${it.tab}',this.value)">
+      </div>`;
+    });
+  });
+  el.innerHTML=html;
+}
 
 function fmt(n){ return (n||n===0)?Number(n).toLocaleString('ko-KR'):'—'; }
 
@@ -898,6 +1001,7 @@ async function parseWihagoW(wb,batchId){
 }
 
 function switchTab(t){
+  _currentTab=t;
   document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active',el.dataset.tab===t));
   document.getElementById('page-home').classList.toggle('active',t==='home');
   document.getElementById('page-cards').classList.toggle('active',t==='cards');
@@ -1040,6 +1144,7 @@ async function loadSettings(){
   document.getElementById('settings-status').textContent=`카드 ${_settingsCards.length}건`;
   renderSettingsCards();
   loadDeptsWeb();
+  renderMenuSettingsWeb();
 }
 
 // ===== 설정: 부서명 관리 =====
@@ -1919,6 +2024,7 @@ async function saveLbCell(team,month,key,value){
   }
 }
 
+renderSidebarWeb();
 loadHome();
 document.getElementById('sidebarToggle').addEventListener('click',()=>{
   document.getElementById('sidebar').classList.toggle('collapsed');
