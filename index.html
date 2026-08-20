@@ -361,6 +361,18 @@
         </table>
       </div>
     </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="card-title" style="margin-bottom:0">대조 이력</div>
+        <button class="btn btn-sm" onclick="loadLcHistoryWeb()">새로고침</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>조회(반영)일시</th><th style="text-align:right">일치</th><th style="text-align:right">누락</th><th style="text-align:right">원장초과</th><th style="text-align:right">금액차이</th><th style="text-align:right">총 차액</th></tr></thead>
+          <tbody id="lc-history-tbody"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <!-- 리더활동비 -->
@@ -1682,6 +1694,23 @@ async function loadLc(){
   refreshDeptFilterOptions(_lcRows.map(r=>r.dept));
   document.getElementById('lc-status').textContent=_lcRows.length?`총 ${_lcRows.length}건 (최근 업로드: ${_lcRows[0]?.uploaded_at?new Date(_lcRows[0].uploaded_at).toLocaleString('ko-KR'):'-'})`:'아직 업로드된 대조현황이 없습니다. 로컬 대시보드에서 "공유서버로 올리기"를 먼저 실행해주세요.';
   renderLc();
+  loadLcHistoryWeb();
+}
+async function loadLcHistoryWeb(){
+  const tbody=document.getElementById('lc-history-tbody');
+  if(!tbody) return;
+  tbody.innerHTML='<tr><td colspan="6" class="empty">불러오는 중...</td></tr>';
+  const {data,error}=await sb.from('lc_history_shared').select('*').order('pushed_at',{ascending:false}).limit(20);
+  if(error){ tbody.innerHTML=`<tr><td colspan="6" class="empty">오류: ${error.message}</td></tr>`; return; }
+  if(!data||!data.length){ tbody.innerHTML='<tr><td colspan="6" class="empty">이력이 없습니다.</td></tr>'; return; }
+  tbody.innerHTML=data.map(h=>`<tr>
+    <td style="white-space:nowrap;font-size:12px">${h.pushed_at?new Date(h.pushed_at).toLocaleString('ko-KR'):''}</td>
+    <td style="text-align:right;color:var(--success)">${h.match_count||0}건</td>
+    <td style="text-align:right;color:var(--danger)">${h.missing_count||0}건</td>
+    <td style="text-align:right;color:#3B82F6">${h.over_count||0}건</td>
+    <td style="text-align:right;color:var(--warning)">${h.diff_count||0}건</td>
+    <td style="text-align:right;font-weight:700">${fmt(h.total_diff)}</td>
+  </tr>`).join('');
 }
 function setLcFilter(f){ _lcFilter=f; renderLc(); }
 function renderLc(){
