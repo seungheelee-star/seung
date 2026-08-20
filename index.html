@@ -1985,7 +1985,7 @@ async function deleteTxWeb(id){
 let _lcRows=[], _lcProcessed={}, _lcFilter='';
 // 카드 승인내역(tx_shared) vs 계정별원장(ledger_shared)을 직접 매칭하는 실시간 대조 엔진
 function _lcRowKeyWeb(r){
-  const txPart=r.tx?.id||'';
+  const txPart=r.tx?`${r.tx.date}|${r.tx.last4}|${r.tx.merchant}|${r.tx.amount}|${r.tx.approvalNo}`:'';
   const entryPart=r.entry?`${r.entry.date}|${r.entry.partner}|${r.entry.credit}|${r.entry.debit}|${r.entry.voucher_no}`:'';
   if(txPart&&entryPart) return `${txPart}__${entryPart}`;
   return txPart||entryPart;
@@ -2099,7 +2099,9 @@ async function loadLc(){
   })).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 
   refreshDeptFilterOptions(_lcRows.map(r=>r.dept));
-  document.getElementById('lc-status').textContent=`총 ${_lcRows.length}건 (일치 ${matched.length} · 누락 ${diffRows.filter(r=>r.type==='누락').length} · 원장초과 ${diffRows.filter(r=>r.type==='원장초과').length} · 금액차이 ${diffRows.filter(r=>r.type==='금액차이').length})`;
+  const activeRows=_lcRows.filter(r=>!_lcProcessed[r.row_key]);
+  const doneCount=_lcRows.length-activeRows.length;
+  document.getElementById('lc-status').textContent=`미처리 ${activeRows.length}건 (일치 ${activeRows.filter(r=>r.type==='일치').length} · 누락 ${activeRows.filter(r=>r.type==='누락').length} · 원장초과 ${activeRows.filter(r=>r.type==='원장초과').length} · 금액차이 ${activeRows.filter(r=>r.type==='금액차이').length}) · 처리됨 ${doneCount}건`;
   renderLc();
   loadLcHistoryWeb();
 }
