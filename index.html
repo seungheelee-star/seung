@@ -160,7 +160,10 @@
       </div>
     </div>
     <div class="card">
-      <div class="card-title">거래 내역</div>
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>거래 내역</span>
+        <button class="btn btn-sm" onclick="exportCsWeb()">📥 엑셀 다운로드</button>
+      </div>
       <div style="overflow-x:auto">
         <table>
           <thead><tr><th>날짜</th><th>카드</th><th>뒷4자리</th><th>가맹점</th><th>승인번호</th><th>구분</th><th style="text-align:right">금액</th></tr></thead>
@@ -176,6 +179,7 @@
       <div class="filters">
         <button class="btn" onclick="loadWihago()">새로고침</button>
         <button class="btn" onclick="cleanupWihagoDupes()" title="완전히 동일한 내역이 중복 업로드된 경우 자동으로 찾아서 정리">🧹 중복 정리</button>
+        <button class="btn" style="color:var(--danger)" onclick="clearWihagoAllWeb()">전체 삭제</button>
         <span style="flex:1"></span>
         <span class="status-msg" id="wh-status" style="margin:0"></span>
       </div>
@@ -237,9 +241,14 @@
   <!-- 카드별 현황 -->
   <!-- 홈 -->
   <div class="page active" id="page-home">
+    <div class="card" style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <label style="font-size:12px;color:var(--text2)">조회 기간</label>
+      <input type="month" id="home-month" onchange="loadHome()">
+      <button class="btn btn-sm" onclick="document.getElementById('home-month').value='';loadHome()">이번 달로</button>
+    </div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px">
       <div class="metric-card" style="border-left:4px solid var(--primary)">
-        <div class="metric-label">이번 달 총 사용</div>
+        <div class="metric-label" id="home-used-label">이번 달 총 사용</div>
         <div class="metric-val" id="home-total-used"></div>
         <div class="metric-sub" id="home-total-pct"></div>
       </div>
@@ -310,11 +319,17 @@
     <div class="card">
       <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
         <span>이용내역 <span id="tx-status" style="font-size:12px;color:var(--text2);font-weight:400"></span></span>
-        <button class="btn btn-sm" onclick="checkBizStatusWeb()" title="롯데/신한 승인내역·법인명세서 업로드분의 거래처 사업자 상태(국세청) 조회">🏢 사업자상태 확인</button>
+        <span>
+          <span id="tx-select-count" style="font-size:12px;color:var(--text2);display:none"></span>
+          <button class="btn btn-sm" id="btn-tx-del-selected" style="color:var(--danger);display:none" onclick="deleteSelectedTxWeb()">선택 삭제</button>
+          <button class="btn btn-sm" onclick="checkBizStatusWeb()" title="롯데/신한 승인내역·법인명세서 업로드분의 거래처 사업자 상태(국세청) 조회">🏢 사업자상태 확인</button>
+          <button class="btn btn-sm" onclick="exportTxWeb()">📥 엑셀 다운로드</button>
+          <button class="btn btn-sm btn-primary" onclick="openManualTxModal()">+ 수동 입력</button>
+        </span>
       </div>
       <div style="overflow-x:auto">
         <table>
-          <thead><tr><th>날짜</th><th>시간</th><th>카드명</th><th>뒷4자리</th><th>가맹점명</th><th>업종</th><th style="text-align:right">금액</th><th>구분</th><th>메모</th><th></th></tr></thead>
+          <thead><tr><th></th><th>날짜</th><th>시간</th><th>카드명</th><th>뒷4자리</th><th>가맹점명</th><th>업종</th><th style="text-align:right">금액</th><th>구분</th><th>메모</th><th></th></tr></thead>
           <tbody id="tx-tbody"></tbody>
         </table>
       </div>
@@ -371,6 +386,7 @@
           <option value="2026">2026년</option>
           <option value="2025">2025년</option>
         </select>
+        <button class="btn" onclick="exportLbWeb()">📥 엑셀 다운로드</button>
         <button class="btn" onclick="loadLb()">새로고침</button>
       </div>
       <div style="padding:14px 16px">
@@ -429,6 +445,14 @@
         <button class="btn btn-sm" onclick="sbResetMenuWeb()">기본값으로 초기화</button>
       </div>
       <div id="menu-settings-list"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">고액 거래 강조 기준 (이 브라우저에만 적용)</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="text" id="alert-threshold-input" placeholder="1000000" style="width:160px">
+        <span style="font-size:12px;color:var(--text2)">원 이상이면 이용내역에서 빨간색으로 강조</span>
+        <button class="btn btn-sm btn-primary" onclick="saveAlertThresholdWeb()">저장</button>
+      </div>
     </div>
     <div class="card">
       <div class="card-title">국세청 사업자등록정보 상태조회 API</div>
@@ -1048,7 +1072,9 @@ async function loadHome(){
   }
   const cardsList=cards||[];
   const now=new Date();
-  const month=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const monthInput=document.getElementById('home-month').value;
+  const month=monthInput||`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  document.getElementById('home-used-label').textContent=monthInput?`${month} 총 사용`:'이번 달 총 사용';
   const monthTxs=all.filter(t=>(t.date||'').startsWith(month));
   function usedFor(c){ return monthTxs.filter(t=>t.last4===c.last4).reduce((s,t)=>s+Math.max(t.amount||0,0),0); }
 
@@ -1145,6 +1171,7 @@ async function loadSettings(){
   renderSettingsCards();
   loadDeptsWeb();
   renderMenuSettingsWeb();
+  document.getElementById('alert-threshold-input').value=getAlertThresholdWeb();
 }
 
 // ===== 설정: 부서명 관리 =====
@@ -1438,6 +1465,22 @@ async function loadWihago(){
   refreshDeptFilterOptions(all.map(r=>r.dept));
   document.getElementById('wh-status').textContent=`총 ${_whRows.length}건`;
   renderWihago();
+}
+async function clearWihagoAllWeb(){
+  if(!_whRows.length){ alert('삭제할 데이터가 없습니다.'); return; }
+  const typed=prompt(`전체 위하고 경비 ${_whRows.length}건을 삭제합니다. 공유 서버의 모든 사용자에게 영향을 줍니다.\n계속하려면 "삭제확인"을 입력하세요.`);
+  if(typed!=='삭제확인'){ if(typed!==null) alert('입력값이 일치하지 않아 취소되었습니다.'); return; }
+  document.getElementById('wh-status').textContent='⏳ 전체 삭제 중...';
+  try{
+    const ids=_whRows.map(r=>r.id);
+    for(let i=0;i<ids.length;i+=200){
+      const {error}=await sb.from('wihago_shared').delete().in('id',ids.slice(i,i+200));
+      if(error) throw error;
+    }
+    loadWihago();
+  }catch(e){
+    alert('삭제 실패: '+e.message);
+  }
 }
 // 완전히 동일한 내역(사용자·소속·내용·용도·거래처·귀속월·일시·금액이 전부 일치)이 서로 다른 id로 중복 업로드된 경우, 하나만 남기고 서버에서 정리
 async function cleanupWihagoDupes(){
@@ -1740,20 +1783,21 @@ function renderTx(){
   if(cardF) rows=rows.filter(r=>r.card_name===cardF);
   if(sourceF) rows=rows.filter(r=>(r.source||'')===sourceF);
   const tbody=document.getElementById('tx-tbody');
-  if(!rows.length){ tbody.innerHTML='<tr><td colspan="10" class="empty">데이터 없음</td></tr>'; return; }
+  if(!rows.length){ tbody.innerHTML='<tr><td colspan="11" class="empty">데이터 없음</td></tr>'; return; }
   const srcLabelMap={gowid:'고위드',upload:'업로드',manual:'수동'};
   const srcColorMap={gowid:'var(--primary-light);color:var(--primary)',upload:'#dcfce7;color:#166534',manual:'#dbeafe;color:#1e40af'};
   tbody.innerHTML=rows.map(r=>{
     const dt=r.datetime||r.date||'';
     const timeStr=dt.length>=16?dt.slice(11,16):'';
     return `<tr>
+    <td><input type="checkbox" class="tx-check" value="${r.id}" onchange="updateTxSelectCount()"></td>
     <td style="white-space:nowrap">${(r.date||'').replace(/-/g,'.')}</td>
     <td style="color:var(--text2)">${timeStr}</td>
     <td>${r.card_name||''}</td>
     <td style="color:var(--text2);font-size:12px">${r.last4||'—'}</td>
     <td>${r.merchant||''}${ntsBadgeWeb(r.biz_no)}</td>
     <td style="font-size:12px;color:var(--text2)">${r.category||'—'}</td>
-    <td style="text-align:right">${fmt(r.amount)}</td>
+    <td style="text-align:right;${(r.amount||0)>=getAlertThresholdWeb()?'font-weight:700;color:var(--danger)':''}">${fmt(r.amount)}</td>
     <td><span class="badge" style="background:${srcColorMap[r.source]||'#eceef5;color:var(--text2)'}">${srcLabelMap[r.source]||r.source||'기타'}</span></td>
     <td style="font-size:12px;color:var(--text2)">${r.memo||'—'}</td>
     <td style="white-space:nowrap">
@@ -1762,6 +1806,151 @@ function renderTx(){
     </td>
   </tr>`;
   }).join('');
+}
+function updateTxSelectCount(){
+  const checked=document.querySelectorAll('.tx-check:checked');
+  const cntEl=document.getElementById('tx-select-count');
+  const btnEl=document.getElementById('btn-tx-del-selected');
+  if(checked.length){
+    cntEl.style.display='';
+    btnEl.style.display='';
+    cntEl.textContent=`${checked.length}건 선택`;
+  } else {
+    cntEl.style.display='none';
+    btnEl.style.display='none';
+  }
+}
+async function deleteSelectedTxWeb(){
+  const ids=[...document.querySelectorAll('.tx-check:checked')].map(c=>c.value);
+  if(!ids.length) return;
+  if(!confirm(`선택한 ${ids.length}건을 삭제하시겠습니까?`)) return;
+  try{
+    for(let i=0;i<ids.length;i+=200){
+      const {error}=await sb.from('tx_shared').delete().in('id',ids.slice(i,i+200));
+      if(error) throw error;
+    }
+    _txRows=_txRows.filter(r=>!ids.includes(r.id));
+    renderTx();
+    updateTxSelectCount();
+  }catch(e){
+    alert('삭제 실패: '+e.message);
+  }
+}
+function openManualTxModal(){
+  const cardOptions=_cardsList.length?_cardsList.map(c=>`<option value="${c.name}" data-last4="${c.last4}">${c.name}</option>`).join(''):'<option value="">등록된 카드 없음</option>';
+  const html=`
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <label style="font-size:12px;color:var(--text2)">카드</label>
+      <select id="manual-tx-card">${cardOptions}</select>
+      <label style="font-size:12px;color:var(--text2)">날짜/시간</label>
+      <input type="datetime-local" id="manual-tx-datetime" value="${new Date().toISOString().slice(0,16)}">
+      <label style="font-size:12px;color:var(--text2)">가맹점명</label>
+      <input type="text" id="manual-tx-merchant">
+      <label style="font-size:12px;color:var(--text2)">업종</label>
+      <input type="text" id="manual-tx-category">
+      <label style="font-size:12px;color:var(--text2)">금액</label>
+      <input type="text" id="manual-tx-amount" inputmode="numeric">
+      <label style="font-size:12px;color:var(--text2)">메모</label>
+      <input type="text" id="manual-tx-memo">
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
+        <button class="btn btn-sm" onclick="closeManualTxModal()">취소</button>
+        <button class="btn btn-sm btn-primary" onclick="saveManualTxWeb()">저장</button>
+      </div>
+    </div>`;
+  let modal=document.getElementById('manual-tx-modal');
+  if(!modal){
+    modal=document.createElement('div');
+    modal.id='manual-tx-modal';
+    modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:200';
+    modal.innerHTML=`<div class="card" style="width:340px;max-width:92vw;margin:0"><div class="card-title">거래내역 수동 입력</div><div id="manual-tx-body"></div></div>`;
+    document.body.appendChild(modal);
+  }
+  document.getElementById('manual-tx-body').innerHTML=html;
+  modal.style.display='flex';
+}
+function closeManualTxModal(){
+  const modal=document.getElementById('manual-tx-modal');
+  if(modal) modal.style.display='none';
+}
+async function saveManualTxWeb(){
+  const cardSel=document.getElementById('manual-tx-card');
+  const cardName=cardSel.value;
+  const last4=cardSel.selectedOptions[0]?.dataset.last4||'';
+  const datetime=document.getElementById('manual-tx-datetime').value;
+  const merchant=document.getElementById('manual-tx-merchant').value.trim();
+  const category=document.getElementById('manual-tx-category').value.trim();
+  const amount=parseInt(document.getElementById('manual-tx-amount').value.replace(/[^0-9]/g,''))||0;
+  const memo=document.getElementById('manual-tx-memo').value.trim();
+  if(!datetime||!amount){ alert('날짜와 금액은 필수입니다.'); return; }
+  const row={
+    id:'manual_'+Date.now()+Math.random().toString(36).slice(2,6),
+    source:'manual', card_name:cardName, last4,
+    date:datetime.slice(0,10), datetime, merchant, amount, category, memo
+  };
+  const {error}=await sb.from('tx_shared').insert([row]);
+  if(error){ alert('저장 실패: '+error.message); return; }
+  closeManualTxModal();
+  loadTx();
+}
+function getAlertThresholdWeb(){ return parseInt(localStorage.getItem('alert_threshold')||'1000000')||1000000; }
+function saveAlertThresholdWeb(){
+  const v=parseInt(document.getElementById('alert-threshold-input').value.replace(/[^0-9]/g,''))||1000000;
+  localStorage.setItem('alert_threshold',v);
+  alert('저장되었습니다.');
+  renderTx();
+}
+function exportTxWeb(){
+  const q=(document.getElementById('tx-search').value||'').trim();
+  const from=document.getElementById('tx-from').value;
+  const to=document.getElementById('tx-to').value;
+  const cardF=document.getElementById('tx-card-filter').value;
+  const sourceF=document.getElementById('tx-source-filter').value;
+  let rows=_txRows;
+  if(q) rows=rows.filter(r=>(r.merchant||'').includes(q));
+  if(from) rows=rows.filter(r=>(r.date||'')>=from);
+  if(to) rows=rows.filter(r=>(r.date||'')<=to);
+  if(cardF) rows=rows.filter(r=>r.card_name===cardF);
+  if(sourceF) rows=rows.filter(r=>(r.source||'')===sourceF);
+  if(!rows.length){ alert('내보낼 데이터가 없습니다.'); return; }
+  const aoa=[['날짜','시간','카드명','뒷4자리','가맹점명','업종','금액','구분','메모']];
+  rows.forEach(r=>aoa.push([r.date||'',(r.datetime||'').slice(11,16),r.card_name||'',r.last4||'',r.merchant||'',r.category||'',r.amount||0,r.source||'',r.memo||'']));
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'이용내역');
+  XLSX.writeFile(wb,`이용내역_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+function exportCsWeb(){
+  const q=(document.getElementById('cs-search').value||'').trim();
+  const from=document.getElementById('cs-from').value;
+  const to=document.getElementById('cs-to').value;
+  const cardF=document.getElementById('cs-card-filter').value;
+  const regionF=document.getElementById('cs-region-filter').value;
+  let rows=_csRows;
+  if(q) rows=rows.filter(r=>(r.merchant||'').includes(q));
+  if(from) rows=rows.filter(r=>(r.date||'')>=from);
+  if(to) rows=rows.filter(r=>(r.date||'')<=to);
+  if(cardF) rows=rows.filter(r=>r.card_name===cardF);
+  if(regionF) rows=rows.filter(r=>(r.is_foreign?'해외':'국내')===regionF);
+  if(!rows.length){ alert('내보낼 데이터가 없습니다.'); return; }
+  const aoa=[['날짜','카드','뒷4자리','가맹점','승인번호','구분','금액']];
+  rows.forEach(r=>aoa.push([r.date||'',r.card_name||'',r.last4||'',r.merchant||'',r.approval_no||'',r.is_foreign?'해외':'국내',r.amount||0]));
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'법인카드이용대금');
+  XLSX.writeFile(wb,`법인카드이용대금_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+function exportLbWeb(){
+  const {result,months}=lbCalc();
+  const aoa=[['팀명','항목',...months.map(m=>m.slice(2).replace('-','.'))]];
+  LB_TEAMS.forEach(team=>{
+    aoa.push([team,'인원(명)',...months.map(m=>result[team][m].hc||'')]);
+    aoa.push(['','예산(원)',...months.map(m=>result[team][m].budget||'')]);
+    aoa.push(['','이월액(원)',...months.map(m=>result[team][m].carry||'')]);
+    aoa.push(['','사용액(원)',...months.map(m=>result[team][m].used||'')]);
+    aoa.push(['','잔액(원)',...months.map(m=>result[team][m].zan||'')]);
+    aoa.push([]);
+  });
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'리더활동비정산');
+  XLSX.writeFile(wb,`리더활동비_정산표_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 async function editTxWeb(id){
   const r=_txRows.find(x=>x.id===id);
