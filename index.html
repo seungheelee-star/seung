@@ -418,6 +418,13 @@
       <input type="file" id="file-wihago-up" accept=".xlsx,.xls,.csv" onchange="handleUploadWeb(event,'wihago')">
       <div id="res-wihago" class="status-msg"></div>
     </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="card-title" style="margin-bottom:0">업로드 이력</div>
+        <button class="btn btn-sm" onclick="loadUploadHistoryWeb()">새로고침</button>
+      </div>
+      <div id="upload-history-list"></div>
+    </div>
   </div>
 
   <!-- 설정 -->
@@ -630,34 +637,74 @@ function sheetToRowsW(rawArr, headerIdx){
   return {headers, rows: dataRows.map(r=>{ const o={}; headers.forEach((h,i)=>{o[h]=r[i]===undefined?'':r[i];}); return o; })};
 }
 
+const UPLOAD_TABLE_MAP={lotte:'tx_shared',shinhan:'tx_shared',card_all:'card_stmt_shared',ledger:'ledger_shared',wihago:'wihago_shared'};
+const UPLOAD_TYPE_LABEL={lotte:'롯데카드 승인내역',shinhan:'신한카드 승인내역',card_all:'법인카드이용대금명세서',ledger:'계정별원장',wihago:'위하고(더존ERP)'};
 async function handleUploadWeb(event,type){
   const file=event.target.files[0];
   if(!file) return;
   const resEl=document.getElementById('res-'+type);
   resEl.textContent='⏳ 처리 중...';
+  const batchId='batch_'+Date.now()+Math.random().toString(36).slice(2,6);
   try{
     const buf=await file.arrayBuffer();
     const wb=XLSX.read(new Uint8Array(buf),{type:'array',cellDates:true});
     let result;
-    if(type==='lotte') result=await parseLotteW(wb);
-    else if(type==='shinhan') result=await parseShinhanW(wb);
-    else if(type==='card_all') result=await parseCardAllW(wb);
-    else if(type==='ledger') result=await parseLedgerW(wb,file.name);
-    else if(type==='wihago') result=await parseWihagoW(wb);
+    if(type==='lotte') result=await parseLotteW(wb,batchId);
+    else if(type==='shinhan') result=await parseShinhanW(wb,batchId);
+    else if(type==='card_all') result=await parseCardAllW(wb,batchId);
+    else if(type==='ledger') result=await parseLedgerW(wb,file.name,batchId);
+    else if(type==='wihago') result=await parseWihagoW(wb,batchId);
     resEl.innerHTML=`✅ ${result.count}건 반영 완료`;
+    await sb.from('upload_history_shared').insert([{
+      id:batchId,table_name:UPLOAD_TABLE_MAP[type],batch_id:batchId,
+      fname:file.name,upload_type:UPLOAD_TYPE_LABEL[type]||type,count:result.count
+    }]);
     // 관련 탭이 열려있으면 새로고침
     if(type==='lotte'||type==='shinhan') loadTx();
     if(type==='card_all') loadCardStmt();
     if(type==='ledger') loadLedger();
     if(type==='wihago') loadWihago();
+    loadUploadHistoryWeb();
   }catch(e){
     resEl.innerHTML=`⚠️ 오류: ${e.message}`;
     console.error(e);
   }
   event.target.value='';
 }
+async function loadUploadHistoryWeb(){
+  const el=document.getElementById('upload-history-list');
+  if(!el) return;
+  el.innerHTML='불러오는 중...';
+  const {data,error}=await sb.from('upload_history_shared').select('*').order('uploaded_at',{ascending:false}).limit(30);
+  if(error){ el.innerHTML='오류: '+error.message; return; }
+  if(!data||!data.length){ el.innerHTML='<div class="empty">업로드 이력이 없습니다.</div>'; return; }
+  el.innerHTML=`<table style="width:100%"><thead><tr><th>업로드일시</th><th>종류</th><th>파일명</th><th style="text-align:right">건수</th><th></th></tr></thead><tbody>${data.map(h=>`
+    <tr>
+      <td style="white-space:nowrap;font-size:12px">${h.uploaded_at?new Date(h.uploaded_at).toLocaleString('ko-KR'):''}</td>
+      <td>${h.upload_type||''}</td>
+      <td style="font-size:12px;color:var(--text2)">${h.fname||''}</td>
+      <td style="text-align:right">${h.count||0}건</td>
+      <td><button class="btn btn-sm" style="color:var(--danger)" onclick="deleteUploadBatchWeb('${h.id}','${h.table_name}','${h.batch_id}',${h.count||0})">삭제</button></td>
+    </tr>`).join('')}</tbody></table>`;
+}
+async function deleteUploadBatchWeb(historyId,tableName,batchId,count){
+  if(!confirm(`이 업로드로 추가된 데이터 ${count}건을 삭제하시겠습니까?`)) return;
+  try{
+    const {error:e1}=await sb.from(tableName).delete().eq('batch_id',batchId);
+    if(e1) throw e1;
+    const {error:e2}=await sb.from('upload_history_shared').delete().eq('id',historyId);
+    if(e2) throw e2;
+    loadUploadHistoryWeb();
+    if(tableName==='tx_shared') loadTx();
+    else if(tableName==='card_stmt_shared') loadCardStmt();
+    else if(tableName==='ledger_shared') loadLedger();
+    else if(tableName==='wihago_shared') loadWihago();
+  }catch(e){
+    alert('삭제 실패: '+e.message);
+  }
+}
 
-async function parseLotteW(wb){
+async function parseLotteW(wb,batchId){
   const ws=wb.Sheets[wb.SheetNames[0]];
   const rawArr=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
   const {headerIdx}=detectHeaderRow(rawArr,['카드번호','매입일자','매입시간','가맹점명','매입금액','승인번호']);
@@ -679,7 +726,7 @@ async function parseLotteW(wb){
       id, source:'upload', card_name:cardMatch?cardMatch.name:`롯데 ${last4}`, last4,
       date:dateStr, datetime:`${dateStr}T${parseTimeW(timeVal)}`,
       merchant:String(getColW(row,headers,'가맹점명','상호명','점포명')||'').trim(),
-      amount:amt, category:String(getColW(row,headers,'가맹점업종','업종명','업종')||'').trim(), memo:''
+      amount:amt, category:String(getColW(row,headers,'가맹점업종','업종명','업종')||'').trim(), memo:'', batch_id:batchId
     });
   });
   for(let i=0;i<payload.length;i+=500){
@@ -689,7 +736,7 @@ async function parseLotteW(wb){
   return {count:payload.length};
 }
 
-async function parseShinhanW(wb){
+async function parseShinhanW(wb,batchId){
   const ws=wb.Sheets[wb.SheetNames[0]];
   const rawArr=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
   const {headerIdx}=detectHeaderRow(rawArr,['카드번호','사용구분','승인번호','승인일자','승인시간','승인금액(원화)','가맹점명']);
@@ -711,7 +758,7 @@ async function parseShinhanW(wb){
       id, source:'upload', card_name:cardMatch?cardMatch.name:`신한 ${last4}`, last4,
       date:dateStr, datetime:`${dateStr}T${parseTimeW(timeVal)}`,
       merchant:String(getColW(row,headers,'가맹점명')||'').trim(),
-      amount:amt, category:String(getColW(row,headers,'가맹점업종명','업종명','업종')||'').trim(), memo:''
+      amount:amt, category:String(getColW(row,headers,'가맹점업종명','업종명','업종')||'').trim(), memo:'', batch_id:batchId
     });
   });
   for(let i=0;i<payload.length;i+=500){
@@ -721,7 +768,7 @@ async function parseShinhanW(wb){
   return {count:payload.length};
 }
 
-async function parseCardAllW(wb){
+async function parseCardAllW(wb,batchId){
   const ws=wb.Sheets[wb.SheetNames[0]];
   const rawArr=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
   const {headerIdx}=detectHeaderRow(rawArr,['카드번호','승인일자','승인금액','사용구분']);
@@ -747,7 +794,7 @@ async function parseCardAllW(wb){
       id, card_name:matchCard?matchCard.name:`(${last4})`, last4,
       date:dateStr, datetime:`${dateStr}T${parseTimeW(timeVal)}`,
       merchant:String(getColW(row,headers,'가맹점명')||'').trim(),
-      approval_no:approvalNo, amount:amt, is_foreign:region==='해외', region
+      approval_no:approvalNo, amount:amt, is_foreign:region==='해외', region, batch_id:batchId
     });
   });
   for(let i=0;i<payload.length;i+=500){
@@ -757,7 +804,7 @@ async function parseCardAllW(wb){
   return {count:payload.length};
 }
 
-async function parseLedgerW(wb, fname){
+async function parseLedgerW(wb,fname,batchId){
   let totalCount=0;
   const ym=fname.match(/20(\d{2})/);
   const year=ym?parseInt('20'+ym[1]):new Date().getFullYear();
@@ -787,7 +834,7 @@ async function parseLedgerW(wb, fname){
       if(!date) return;
       const issuer=extractIssuerFromPartnerW(partner);
       const id='ld_'+(voucherNo?voucherNo+'_'+date+'_'+credit:`${date}_${partner}_${credit}_${debit}_${Math.random().toString(36).slice(2,6)}`);
-      payload.push({id,date,desc_text:desc,partner,last4,issuer,debit,credit,voucher_no:voucherNo,dept,account_type:accountType});
+      payload.push({id,date,desc_text:desc,partner,last4,issuer,debit,credit,voucher_no:voucherNo,dept,account_type:accountType,batch_id:batchId});
     });
     for(let i=0;i<payload.length;i+=500){
       const {error}=await sb.from('ledger_shared').upsert(payload.slice(i,i+500),{onConflict:'id'});
@@ -798,7 +845,7 @@ async function parseLedgerW(wb, fname){
   return {count:totalCount};
 }
 
-async function parseWihagoW(wb){
+async function parseWihagoW(wb,batchId){
   const ws=wb.Sheets[wb.SheetNames[0]];
   const rawArr=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
   const {headerIdx}=detectHeaderRow(rawArr,['사용자','지출내용','거래처','사용금액','상태','지출일시','요청일자','카드정보','소속']);
@@ -816,8 +863,8 @@ async function parseWihagoW(wb){
     const amount=parseAmtW(getColW(row,headers,'사용금액','금액'));
     const status=String(getColW(row,headers,'상태')||'').trim();
     if(!user&&!content&&!amount) return;
-    const id='wh_'+(user+'_'+datetimeRaw+'_'+amount+'_'+content).replace(/\s+/g,'').slice(0,80)+'_'+Math.random().toString(36).slice(2,6);
-    payload.push({id,user_name:user,dept,content,category,partner,month,date,amount,status});
+    const id='wh_'+(user+'_'+datetimeRaw+'_'+amount+'_'+content).replace(/\s+/g,'').slice(0,80);
+    payload.push({id,user_name:user,dept,content,category,partner,month,date,amount,status,batch_id:batchId});
   });
   for(let i=0;i<payload.length;i+=500){
     const {error}=await sb.from('wihago_shared').upsert(payload.slice(i,i+500),{onConflict:'id'});
@@ -849,6 +896,7 @@ function switchTab(t){
   else if(t==='lc') loadLc();
   else if(t==='lb') loadLb();
   else if(t==='settings') loadSettings();
+  else if(t==='upload') loadUploadHistoryWeb();
 }
 
 // ===== 홈 =====
