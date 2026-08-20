@@ -340,6 +340,12 @@
   <div class="page" id="page-lc">
     <div class="card">
       <div class="filters">
+        <select id="lc-month-filter"><option value="">전체 기간</option></select>
+        <button class="btn btn-primary btn-sm" onclick="loadLc()">🔍 조회</button>
+        <span style="flex:1"></span>
+        <button class="btn" onclick="pushLcHistorySnapshotWeb()" title="현재 조회 결과를 대조 이력에 기록">이력에 기록</button>
+      </div>
+      <div class="filters">
         <button class="btn btn-primary" onclick="setLcFilter('')">전체</button>
         <button class="btn" onclick="setLcFilter('일치')">일치</button>
         <button class="btn" onclick="setLcFilter('누락')">누락</button>
@@ -347,8 +353,6 @@
         <button class="btn" onclick="setLcFilter('금액차이')">금액차이</button>
         <button class="btn" onclick="setLcFilter('처리됨')">처리됨</button>
         <select id="lc-dept-filter" class="dept-filter-select" onchange="renderLc()"><option value="">전체 부서</option></select>
-        <span style="flex:1"></span>
-        <button class="btn" onclick="loadLc()">새로고침</button>
       </div>
       <div class="status-msg" id="lc-status"></div>
       <div style="overflow-x:auto">
@@ -872,7 +876,8 @@ async function parseLotteW(wb,batchId){
       id, source:'upload', card_name:cardMatch?cardMatch.name:`롯데 ${last4}`, last4,
       date:dateStr, datetime:`${dateStr}T${parseTimeW(timeVal)}`,
       merchant:String(getColW(row,headers,'가맹점명','상호명','점포명')||'').trim(),
-      amount:amt, category:String(getColW(row,headers,'가맹점업종','업종명','업종')||'').trim(), memo:'', batch_id:batchId
+      amount:amt, category:String(getColW(row,headers,'가맹점업종','업종명','업종')||'').trim(), memo:'', batch_id:batchId,
+      is_foreign:String(getColW(row,headers,'국내외사용구분','사용구분')||'').includes('해외')
     });
   });
   const dedupedPayload=dedupeByIdW(payload);
@@ -905,7 +910,8 @@ async function parseShinhanW(wb,batchId){
       id, source:'upload', card_name:cardMatch?cardMatch.name:`신한 ${last4}`, last4,
       date:dateStr, datetime:`${dateStr}T${parseTimeW(timeVal)}`,
       merchant:String(getColW(row,headers,'가맹점명')||'').trim(),
-      amount:amt, category:String(getColW(row,headers,'가맹점업종명','업종명','업종')||'').trim(), memo:'', batch_id:batchId
+      amount:amt, category:String(getColW(row,headers,'가맹점업종명','업종명','업종')||'').trim(), memo:'', batch_id:batchId,
+      is_foreign:String(getColW(row,headers,'사용구분')||'').includes('해외')
     });
   });
   const dedupedPayload=dedupeByIdW(payload);
@@ -1977,17 +1983,138 @@ async function deleteTxWeb(id){
 
 // ===== 대조현황 =====
 let _lcRows=[], _lcProcessed={}, _lcFilter='';
+// 카드 승인내역(tx_shared) vs 계정별원장(ledger_shared)을 직접 매칭하는 실시간 대조 엔진
+function _lcRowKeyWeb(r){
+  const txPart=r.tx?.id||'';
+  const entryPart=r.entry?`${r.entry.date}|${r.entry.partner}|${r.entry.credit}|${r.entry.debit}|${r.entry.voucher_no}`:'';
+  if(txPart&&entryPart) return `${txPart}__${entryPart}`;
+  return txPart||entryPart;
+}
+let _lcLastMatched=[], _lcLastDiffRows=[];
 async function loadLc(){
-  document.getElementById('lc-status').textContent='불러오는 중...';
-  const {data:rows,error:e1}=await sb.from('lc_shared_rows').select('*').order('date',{ascending:false});
-  const {data:proc,error:e2}=await sb.from('lc_shared_processed').select('*');
-  if(e1||e2){ document.getElementById('lc-status').textContent='오류: '+(e1||e2).message; return; }
-  _lcRows=rows||[];
+  document.getElementById('lc-status').textContent='⏳ 대조 실행 중...';
+  const month=document.getElementById('lc-month-filter').value;
+
+  const {data:cards}=await sb.from('cards_shared').select('*');
+
+  let allTx=[], from=0, pageSize=1000;
+  while(true){
+    const {data,error}=await sb.from('tx_shared').select('*').eq('source','upload').range(from,from+pageSize-1);
+    if(error){ document.getElementById('lc-status').textContent='오류: '+error.message; return; }
+    allTx=allTx.concat(data||[]);
+    if(!data||data.length<pageSize) break;
+    from+=pageSize;
+  }
+  let allLedger=[]; from=0;
+  while(true){
+    const {data,error}=await sb.from('ledger_shared').select('*').eq('account_type','미지급금').gt('credit',0).range(from,from+pageSize-1);
+    if(error){ document.getElementById('lc-status').textContent='오류: '+error.message; return; }
+    allLedger=allLedger.concat(data||[]);
+    if(!data||data.length<pageSize) break;
+    from+=pageSize;
+  }
+
+  const {data:proc}=await sb.from('lc_shared_processed').select('*');
   _lcProcessed={};
   (proc||[]).forEach(p=>{ _lcProcessed[p.row_key]=p; });
+
+  // 월 필터 옵션 갱신
+  const allMonths=[...new Set([...allTx.map(t=>(t.date||'').slice(0,7)),...allLedger.map(e=>(e.date||'').slice(0,7))].filter(Boolean))].sort().reverse();
+  const monthSel=document.getElementById('lc-month-filter');
+  monthSel.innerHTML='<option value="">전체 기간</option>'+allMonths.map(m=>`<option value="${m}">${m}</option>`).join('');
+  if(allMonths.includes(month)) monthSel.value=month;
+
+  const inPeriod=d=>!month||(d||'').startsWith(month);
+
+  let txs=allTx.filter(t=>t.date&&inPeriod(t.date)).map(t=>{
+    const card=cards.find(c=>c.last4===t.last4);
+    return {id:t.id,date:t.date,merchant:t.merchant||'',amount:t.amount||0,last4:t.last4||'',dept:card?.dept||'',cardName:t.card_name||'',isForeign:!!t.is_foreign,approvalNo:t.approval_no||''};
+  });
+  let ledgerEntries=allLedger.filter(e=>{
+    if(!inPeriod(e.date||'')) return false;
+    const p=e.partner||'';
+    return p.includes('신한카드')||p.includes('롯데카드');
+  }).map(e=>{
+    const m=(e.partner||'').match(/\((\d{4})\)/);
+    return {...e,last4:m?m[1]:(e.last4||'')};
+  });
+
+  // 취소건 상쇄 (같은 승인번호의 양수+음수 쌍 제거)
+  const cancelledIds=new Set();
+  const byApproval=new Map();
+  txs.forEach(t=>{ if(!t.approvalNo) return; if(!byApproval.has(t.approvalNo)) byApproval.set(t.approvalNo,[]); byApproval.get(t.approvalNo).push(t); });
+  byApproval.forEach(group=>{
+    const pos=group.filter(t=>t.amount>0), neg=group.filter(t=>t.amount<0);
+    neg.forEach(n=>{ const m=pos.find(p=>p.amount===Math.abs(n.amount)&&!cancelledIds.has(p.id)); if(m){ cancelledIds.add(m.id); cancelledIds.add(n.id); } });
+  });
+  txs=txs.filter(t=>!cancelledIds.has(t.id)&&t.amount>0);
+
+  const matchedLedgerIds=new Set(), matchedTxIds=new Set();
+  const matched=[], diffRows=[];
+  const dayDiff=(t,e)=>Math.abs(new Date(t.date)-new Date(e.date))/86400000;
+  const cardOk=(t,e)=>{ if(e.last4&&t.last4) return e.last4===t.last4; return true; };
+  const amtExact=(t,e)=>t.amount===e.credit;
+  const amtFuzzy=(t,e)=>e.credit>0&&Math.abs(t.amount-e.credit)/e.credit<=0.015;
+  const amtFuzzyFx=(t,e)=>e.credit>0&&Math.abs(t.amount-e.credit)/e.credit<=0.05;
+  function tryMatch(ledList,txPool,pred){
+    ledList.forEach(e=>{
+      if(matchedLedgerIds.has(e.id)) return;
+      const cands=txPool.filter(t=>!matchedTxIds.has(t.id)&&pred(t,e));
+      if(!cands.length) return;
+      cands.sort((a,b)=>dayDiff(a,e)-dayDiff(b,e)||Math.abs(a.amount-e.credit)-Math.abs(b.amount-e.credit));
+      const best=cands[0];
+      matchedLedgerIds.add(e.id); matchedTxIds.add(best.id);
+      const diff=best.amount-e.credit;
+      if(Math.abs(diff)<1) matched.push({tx:best,entry:e});
+      else diffRows.push({type:'금액차이',tx:best,entry:e,diff});
+    });
+  }
+  tryMatch(ledgerEntries,txs,(t,e)=>cardOk(t,e)&&dayDiff(t,e)===0&&amtExact(t,e));
+  tryMatch(ledgerEntries,txs,(t,e)=>cardOk(t,e)&&dayDiff(t,e)<=1&&amtExact(t,e));
+  tryMatch(ledgerEntries,txs,(t,e)=>cardOk(t,e)&&dayDiff(t,e)<=2&&amtExact(t,e));
+  tryMatch(ledgerEntries,txs,(t,e)=>cardOk(t,e)&&dayDiff(t,e)<=2&&amtFuzzy(t,e));
+  tryMatch(ledgerEntries,txs,(t,e)=>cardOk(t,e)&&dayDiff(t,e)<=3&&amtFuzzyFx(t,e));
+  tryMatch(ledgerEntries,txs,(t,e)=>cardOk(t,e)&&dayDiff(t,e)<=5&&e.credit>0&&Math.abs(t.amount-e.credit)/e.credit<=0.01);
+
+  const missingTxs=txs.filter(t=>!matchedTxIds.has(t.id));
+  const overLedger=ledgerEntries.filter(e=>!matchedLedgerIds.has(e.id));
+  missingTxs.forEach(t=>diffRows.push({type:'누락',tx:t,entry:null,diff:t.amount,isForeign:!!t.isForeign}));
+  overLedger.forEach(e=>diffRows.push({type:'원장초과',tx:null,entry:e,diff:-e.credit}));
+  diffRows.sort((a,b)=>(a.tx?.date||a.entry?.date||'').localeCompare(b.tx?.date||b.entry?.date||''));
+
+  _lcLastMatched=matched;
+  _lcLastDiffRows=diffRows;
+
+  // renderLc()가 기존과 동일하게 동작하도록 _lcRows 포맷으로 변환
+  const allRows=[
+    ...matched.map(m=>({type:'일치',tx:m.tx,entry:m.entry,diff:0,isForeign:false})),
+    ...diffRows
+  ];
+  _lcRows=allRows.map(r=>({
+    row_key:_lcRowKeyWeb(r), type:r.type,
+    date:r.tx?.date||r.entry?.date||'', dept:r.tx?.dept||'', last4:r.tx?.last4||r.entry?.last4||'',
+    merchant:r.tx?.merchant||'', partner:r.entry?.partner||'',
+    approval_no:r.tx?.approvalNo||'', tx_amount:r.tx?.amount??null, entry_amount:r.entry?.credit??null,
+    diff:r.diff||0, is_foreign:!!r.isForeign
+  })).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+
   refreshDeptFilterOptions(_lcRows.map(r=>r.dept));
-  document.getElementById('lc-status').textContent=_lcRows.length?`총 ${_lcRows.length}건 (최근 업로드: ${_lcRows[0]?.uploaded_at?new Date(_lcRows[0].uploaded_at).toLocaleString('ko-KR'):'-'})`:'아직 업로드된 대조현황이 없습니다. 로컬 대시보드에서 "공유서버로 올리기"를 먼저 실행해주세요.';
+  document.getElementById('lc-status').textContent=`총 ${_lcRows.length}건 (일치 ${matched.length} · 누락 ${diffRows.filter(r=>r.type==='누락').length} · 원장초과 ${diffRows.filter(r=>r.type==='원장초과').length} · 금액차이 ${diffRows.filter(r=>r.type==='금액차이').length})`;
   renderLc();
+  loadLcHistoryWeb();
+}
+async function pushLcHistorySnapshotWeb(){
+  if(!_lcRows.length){ alert('먼저 조회를 실행해주세요.'); return; }
+  const missingCnt=_lcLastDiffRows.filter(r=>r.type==='누락').length;
+  const overCnt=_lcLastDiffRows.filter(r=>r.type==='원장초과').length;
+  const diffCnt=_lcLastDiffRows.filter(r=>r.type==='금액차이').length;
+  const totalDiff=_lcLastDiffRows.reduce((s,r)=>s+(r.diff||0),0);
+  const {error}=await sb.from('lc_history_shared').insert([{
+    id:'lch_'+Date.now(), match_count:_lcLastMatched.length,
+    missing_count:missingCnt, over_count:overCnt, diff_count:diffCnt, total_diff:totalDiff
+  }]);
+  if(error){ alert('기록 실패: '+error.message); return; }
+  alert('대조 이력에 기록했습니다.');
   loadLcHistoryWeb();
 }
 async function loadLcHistoryWeb(){
