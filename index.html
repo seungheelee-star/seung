@@ -332,7 +332,7 @@
       </div>
       <div style="overflow-x:auto">
         <table>
-          <thead><tr><th>날짜</th><th>시간</th><th>카드명</th><th>뒷4자리</th><th>가맹점명</th><th>업종</th><th style="text-align:right">금액</th><th>구분</th><th>메모</th></tr></thead>
+          <thead><tr><th>날짜</th><th>시간</th><th>카드명</th><th>뒷4자리</th><th>가맹점명</th><th>업종</th><th style="text-align:right">금액</th><th>구분</th><th>메모</th><th></th></tr></thead>
           <tbody id="tx-tbody"></tbody>
         </table>
       </div>
@@ -1542,7 +1542,7 @@ function renderTx(){
   if(cardF) rows=rows.filter(r=>r.card_name===cardF);
   if(sourceF) rows=rows.filter(r=>(r.source||'')===sourceF);
   const tbody=document.getElementById('tx-tbody');
-  if(!rows.length){ tbody.innerHTML='<tr><td colspan="9" class="empty">데이터 없음</td></tr>'; return; }
+  if(!rows.length){ tbody.innerHTML='<tr><td colspan="10" class="empty">데이터 없음</td></tr>'; return; }
   const srcLabelMap={gowid:'고위드',upload:'업로드',manual:'수동'};
   const srcColorMap={gowid:'var(--primary-light);color:var(--primary)',upload:'#dcfce7;color:#166534',manual:'#dbeafe;color:#1e40af'};
   tbody.innerHTML=rows.map(r=>{
@@ -1558,8 +1558,34 @@ function renderTx(){
     <td style="text-align:right">${fmt(r.amount)}</td>
     <td><span class="badge" style="background:${srcColorMap[r.source]||'#eceef5;color:var(--text2)'}">${srcLabelMap[r.source]||r.source||'기타'}</span></td>
     <td style="font-size:12px;color:var(--text2)">${r.memo||'—'}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="editTxWeb('${r.id}')">수정</button>
+      <button class="btn btn-sm" style="color:var(--danger)" onclick="deleteTxWeb('${r.id}')">삭제</button>
+    </td>
   </tr>`;
   }).join('');
+}
+async function editTxWeb(id){
+  const r=_txRows.find(x=>x.id===id);
+  if(!r) return;
+  const merchant=prompt('가맹점명',r.merchant||'');
+  if(merchant===null) return;
+  const category=prompt('업종',r.category||'')??r.category;
+  const amountStr=prompt('금액',r.amount||0);
+  if(amountStr===null) return;
+  const amount=parseInt(String(amountStr).replace(/[^0-9-]/g,''))||0;
+  const memo=prompt('메모',r.memo||'')??r.memo;
+  const {error}=await sb.from('tx_shared').update({merchant,category,amount,memo}).eq('id',id);
+  if(error){ alert('저장 실패: '+error.message); return; }
+  Object.assign(r,{merchant,category,amount,memo});
+  renderTx();
+}
+async function deleteTxWeb(id){
+  if(!confirm('이 내역을 삭제하시겠습니까?')) return;
+  const {error}=await sb.from('tx_shared').delete().eq('id',id);
+  if(error){ alert('삭제 실패: '+error.message); return; }
+  _txRows=_txRows.filter(r=>r.id!==id);
+  renderTx();
 }
 
 // ===== 대조현황 =====
