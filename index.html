@@ -338,40 +338,79 @@
 
   <!-- 대조현황 -->
   <div class="page" id="page-lc">
-    <div class="card">
-      <div class="filters">
-        <select id="lc-month-filter"><option value="">전체 기간</option></select>
-        <button class="btn btn-primary btn-sm" onclick="loadLc()">🔍 조회</button>
-        <span style="flex:1"></span>
-        <button class="btn" onclick="pushLcHistorySnapshotWeb()" title="현재 조회 결과를 대조 이력에 기록">이력에 기록</button>
-      </div>
-      <div class="filters">
-        <button class="btn btn-primary" onclick="setLcFilter('')">전체</button>
-        <button class="btn" onclick="setLcFilter('일치')">일치</button>
-        <button class="btn" onclick="setLcFilter('누락')">누락</button>
-        <button class="btn" onclick="setLcFilter('원장초과')">원장초과</button>
-        <button class="btn" onclick="setLcFilter('금액차이')">금액차이</button>
-        <button class="btn" onclick="setLcFilter('처리됨')">처리됨</button>
-        <select id="lc-dept-filter" class="dept-filter-select" onchange="renderLc()"><option value="">전체 부서</option></select>
-      </div>
-      <div class="status-msg" id="lc-status"></div>
-      <div style="overflow-x:auto">
-        <table>
-          <thead><tr><th>판정</th><th>날짜</th><th>부서</th><th>카드</th><th>가맹점/거래처</th><th style="text-align:right">카드금액</th><th style="text-align:right">원장금액</th><th style="text-align:right">차액</th><th>처리</th><th>비고</th></tr></thead>
-          <tbody id="lc-tbody"></tbody>
-        </table>
+    <div style="display:flex;gap:2px;margin-bottom:14px">
+      <div class="lb-subtab active" data-lcpagetab="current" onclick="switchLcPageTabWeb('current')">현재 대조</div>
+      <div class="lb-subtab" data-lcpagetab="history" onclick="switchLcPageTabWeb('history')">대조 이력</div>
+    </div>
+
+    <!-- 대조 이력 탭 -->
+    <div id="lc-tab-history-web" style="display:none">
+      <div class="card">
+        <div class="card-title">대조 이력</div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>조회(반영)일시</th><th style="text-align:right">일치</th><th style="text-align:right">누락</th><th style="text-align:right">원장초과</th><th style="text-align:right">금액차이</th><th style="text-align:right">총 차액</th></tr></thead>
+            <tbody id="lc-history-tbody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
-    <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <div class="card-title" style="margin-bottom:0">대조 이력</div>
-        <button class="btn btn-sm" onclick="loadLcHistoryWeb()">새로고침</button>
+
+    <!-- 현재 대조 탭 -->
+    <div id="lc-tab-current-web">
+      <div class="card">
+        <div class="filters">
+          <select id="lc-month-filter"><option value="">전체 기간</option></select>
+          <button class="btn btn-primary" onclick="loadLc()">조회 ▶</button>
+          <button class="btn btn-sm" onclick="checkBizStatusForLcWeb()" title="거래처 사업자 상태(국세청) 조회">🏢 사업자상태 확인</button>
+          <button class="btn btn-sm" onclick="exportLcWeb()">📥 엑셀 다운로드</button>
+          <span style="flex:1"></span>
+          <button class="btn btn-sm" style="color:#1e40af" onclick="pushLcHistorySnapshotWeb()" title="현재 조회 결과를 대조 이력에 기록">🔗 이력에 기록</button>
+        </div>
       </div>
-      <div style="overflow-x:auto">
-        <table>
-          <thead><tr><th>조회(반영)일시</th><th style="text-align:right">일치</th><th style="text-align:right">누락</th><th style="text-align:right">원장초과</th><th style="text-align:right">금액차이</th><th style="text-align:right">총 차액</th></tr></thead>
-          <tbody id="lc-history-tbody"></tbody>
-        </table>
+
+      <div id="lc2-status-banner-web" style="display:none;padding:16px 20px;border-radius:10px;margin-bottom:14px"></div>
+
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px">
+        <div class="metric-card" style="border-top:3px solid var(--success);cursor:pointer" onclick="setLcFilter('일치')">
+          <div class="metric-label" style="color:var(--success);font-weight:600">일치</div>
+          <div class="metric-val" id="lc-kpi-match" style="color:var(--success)">—</div>
+        </div>
+        <div class="metric-card" style="border-top:3px solid #EF4444;cursor:pointer" onclick="setLcFilter('누락')">
+          <div class="metric-label" style="color:#EF4444;font-weight:600">누락</div>
+          <div class="metric-val" id="lc-kpi-missing" style="color:#EF4444">—</div>
+        </div>
+        <div class="metric-card" style="border-top:3px solid #3B82F6;cursor:pointer" onclick="setLcFilter('원장초과')">
+          <div class="metric-label" style="color:#3B82F6;font-weight:600">원장초과</div>
+          <div class="metric-val" id="lc-kpi-over" style="color:#3B82F6">—</div>
+        </div>
+        <div class="metric-card" style="border-top:3px solid #F59E0B;cursor:pointer" onclick="setLcFilter('금액차이')">
+          <div class="metric-label" style="color:#F59E0B;font-weight:600">금액차이</div>
+          <div class="metric-val" id="lc-kpi-diff" style="color:#F59E0B">—</div>
+        </div>
+        <div class="metric-card" style="border-top:3px solid var(--danger)">
+          <div class="metric-label" style="font-weight:600">총 차액</div>
+          <div class="metric-val" id="lc-kpi-total-diff">—</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="filters">
+          <button class="btn btn-primary" onclick="setLcFilter('')">전체</button>
+          <button class="btn" onclick="setLcFilter('일치')">일치</button>
+          <button class="btn" onclick="setLcFilter('누락')">누락</button>
+          <button class="btn" onclick="setLcFilter('원장초과')">원장초과</button>
+          <button class="btn" onclick="setLcFilter('금액차이')">금액차이</button>
+          <button class="btn" onclick="setLcFilter('처리됨')">처리됨</button>
+          <select id="lc-dept-filter" class="dept-filter-select" onchange="renderLc()"><option value="">전체 부서</option></select>
+        </div>
+        <div class="status-msg" id="lc-status"></div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>판정</th><th>날짜</th><th>부서</th><th>카드</th><th>가맹점/거래처</th><th style="text-align:right">카드금액</th><th style="text-align:right">원장금액</th><th style="text-align:right">차액</th><th>처리</th><th>비고</th></tr></thead>
+            <tbody id="lc-tbody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -539,7 +578,6 @@ const SB_DEFAULT_WEB={
     {id:'grp-expense',label:'경비관리',items:[
       {tab:'wihago',label:'위하고 경비'},
       {tab:'cs',label:'법인카드이용대금'},
-      {tab:'ledger',label:'계정별원장'},
       {tab:'lc',label:'대조현황 처리'},
       {tab:'lb',label:'리더활동비 입력'}
     ]},
@@ -2027,9 +2065,9 @@ async function loadLc(){
 
   const inPeriod=d=>!month||(d||'').startsWith(month);
 
-  let txs=allTx.filter(t=>t.date&&inPeriod(t.date)).map(t=>{
+  let txs=allTx.map(t=>({...t,_date:t.date||(t.datetime||'').slice(0,10)})).filter(t=>t._date&&inPeriod(t._date)).map(t=>{
     const card=cards.find(c=>c.last4===t.last4);
-    return {id:t.id,date:t.date,merchant:t.merchant||'',amount:t.amount||0,last4:t.last4||'',dept:card?.dept||'',cardName:t.card_name||'',isForeign:!!t.is_foreign,approvalNo:t.approval_no||''};
+    return {id:t.id,date:t._date,merchant:t.merchant||'',amount:t.amount||0,last4:t.last4||'',dept:card?.dept||'',cardName:t.card_name||'',isForeign:!!t.is_foreign,approvalNo:t.approval_no||''};
   });
   let ledgerEntries=allLedger.filter(e=>{
     if(!inPeriod(e.date||'')) return false;
@@ -2137,10 +2175,48 @@ async function loadLcHistoryWeb(){
   </tr>`).join('');
 }
 function setLcFilter(f){ _lcFilter=f; renderLc(); }
+function switchLcPageTabWeb(tab){
+  document.querySelectorAll('.lb-subtab[data-lcpagetab]').forEach(el=>el.classList.toggle('active',el.dataset.lcpagetab===tab));
+  document.getElementById('lc-tab-current-web').style.display=tab==='current'?'':'none';
+  document.getElementById('lc-tab-history-web').style.display=tab==='history'?'':'none';
+  if(tab==='history') loadLcHistoryWeb();
+}
+function checkBizStatusForLcWeb(){ checkBizStatusWeb(); }
+function exportLcWeb(){
+  if(!_lcRows.length){ alert('먼저 조회를 실행해주세요.'); return; }
+  const aoa=[['판정','날짜','부서','카드','가맹점/거래처','카드금액','원장금액','차액']];
+  _lcRows.forEach(r=>aoa.push([r.type,r.date||'',r.dept||'',r.last4||'',r.merchant||r.partner||'',r.tx_amount||0,r.entry_amount||0,r.diff||0]));
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'대조현황');
+  XLSX.writeFile(wb,`대조현황_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
 function renderLc(){
   const typeStyle={'누락':'background:#fee2e2;color:#991b1b','원장초과':'background:#dbeafe;color:#1e40af','금액차이':'background:#fef3c7;color:#92400e','일치':'background:#dcfce7;color:#166534'};
   const deptF=document.getElementById('lc-dept-filter').value;
   let rows=_lcRows.map(r=>({...r,isDone:!!_lcProcessed[r.row_key],proc:_lcProcessed[r.row_key]}));
+
+  // KPI (처리되지 않은 항목 기준)
+  const activeRows=rows.filter(r=>!r.isDone);
+  const kpiMatch=activeRows.filter(r=>r.type==='일치');
+  const kpiMissing=activeRows.filter(r=>r.type==='누락');
+  const kpiOver=activeRows.filter(r=>r.type==='원장초과');
+  const kpiDiff=activeRows.filter(r=>r.type==='금액차이');
+  document.getElementById('lc-kpi-match').textContent=`${kpiMatch.length}건`;
+  document.getElementById('lc-kpi-missing').textContent=`${kpiMissing.length}건`;
+  document.getElementById('lc-kpi-over').textContent=`${kpiOver.length}건`;
+  document.getElementById('lc-kpi-diff').textContent=`${kpiDiff.length}건`;
+  const activeCardAmt=activeRows.filter(r=>r.tx_amount!=null).reduce((s,r)=>s+r.tx_amount,0);
+  const activeLedAmt=activeRows.filter(r=>r.entry_amount!=null).reduce((s,r)=>s+r.entry_amount,0);
+  const totalDiff=activeCardAmt-activeLedAmt;
+  document.getElementById('lc-kpi-total-diff').innerHTML=`<span style="color:${Math.abs(totalDiff)<1?'var(--success)':totalDiff>0?'var(--danger)':'#3B82F6'}">${totalDiff>0?'+':''}${fmt(totalDiff)}</span>`;
+  const banner=document.getElementById('lc2-status-banner-web');
+  const issueCount=kpiMissing.length+kpiOver.length+kpiDiff.length;
+  banner.style.display='';
+  banner.style.background=issueCount?'#fff7ed':'#f0fdf4';
+  banner.style.color=issueCount?'#92400e':'#166534';
+  banner.style.border=`1px solid ${issueCount?'#fed7aa':'#bbf7d0'}`;
+  banner.textContent=issueCount?`⚠ 차이 있음 — 확인 필요 (불일치 ${issueCount}건)`:`✅ 전체 일치 — ${kpiMatch.length}건 모두 일치`;
+
   if(_lcFilter==='처리됨') rows=rows.filter(r=>r.isDone);
   else if(_lcFilter) rows=rows.filter(r=>r.type===_lcFilter&&!r.isDone);
   else rows=rows.filter(r=>!r.isDone);
