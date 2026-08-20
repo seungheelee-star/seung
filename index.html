@@ -988,7 +988,8 @@ async function parseLedgerW(wb,fname,batchId){
       const date=parseLedgerDateW(dateRaw,year);
       if(!date) return;
       const issuer=extractIssuerFromPartnerW(partner);
-      const id='ld_'+(voucherNo?voucherNo+'_'+date+'_'+credit:`${date}_${partner}_${credit}_${debit}_${Math.random().toString(36).slice(2,6)}`);
+      // 로컬 업로드와 동일한 고정 ID 규칙을 사용해, 같은 원장 항목이 양쪽에서 중복으로 쌓이지 않게 함
+      const id='ld_'+(voucherNo?`${voucherNo}_${date}_${credit}`:`${date}_${partner}_${credit}_${debit}`);
       payload.push({id,date,desc_text:desc,partner,last4,issuer,debit,credit,voucher_no:voucherNo,dept,account_type:accountType,batch_id:batchId});
     });
     const dedupedPayload=dedupeByIdW(payload);
