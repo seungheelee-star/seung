@@ -574,6 +574,14 @@
       <div id="menu-settings-list"></div>
     </div>
     <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div class="card-title" style="margin-bottom:0">카드사별 이용대금 청구기간 · 결제일</div>
+        <button class="btn btn-sm" onclick="loadBillingPeriodsWeb()">새로고침</button>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">청구기간: 해당 월 이용분 집계 기준 / 결제일: 실제 출금일 (전체 사용자에게 공유됩니다)</div>
+      <div id="billing-setting-web" style="overflow-x:auto"></div>
+    </div>
+    <div class="card">
       <div class="card-title">고액 거래 강조 기준 (이 브라우저에만 적용)</div>
       <div style="display:flex;gap:8px;align-items:center">
         <input type="text" id="alert-threshold-input" placeholder="1000000" style="width:160px">
@@ -1307,6 +1315,52 @@ async function loadSettings(){
   loadDeptsWeb();
   renderMenuSettingsWeb();
   document.getElementById('alert-threshold-input').value=getAlertThresholdWeb();
+  loadBillingPeriodsWeb();
+}
+let _billingPeriods={};
+async function loadBillingPeriodsWeb(){
+  const el=document.getElementById('billing-setting-web');
+  el.innerHTML='불러오는 중...';
+  const [{data:bp,error:e1},{data:cards,error:e2}]=await Promise.all([
+    sb.from('billing_periods_shared').select('*'),
+    sb.from('cards_shared').select('issuer')
+  ]);
+  if(e1||e2){ el.innerHTML='오류: '+(e1||e2).message; return; }
+  _billingPeriods={};
+  (bp||[]).forEach(p=>{ _billingPeriods[p.issuer]=p; });
+  const issuers=[...new Set((cards||[]).map(c=>c.issuer).filter(Boolean))];
+  if(!issuers.length){ el.innerHTML='<div class="empty">등록된 카드가 없습니다.</div>'; return; }
+  el.innerHTML=`<table style="width:100%">
+    <thead><tr>
+      <th>카드사</th><th style="text-align:center" colspan="3">청구기간</th><th style="text-align:center">결제일</th><th>표시명</th><th></th>
+    </tr></thead>
+    <tbody>${issuers.map(iss=>{
+      const key=iss.replace(/[^a-z0-9]/gi,'_');
+      const p=_billingPeriods[iss]||{start_day:1,end_day:31,payment_day:'',label:''};
+      return `<tr>
+        <td style="font-weight:600">${iss}</td>
+        <td style="text-align:center"><input type="number" min="1" max="31" value="${p.start_day}" id="bp-start-${key}" style="width:56px;text-align:center"></td>
+        <td style="text-align:center;color:var(--text2);font-size:12px">일 ~</td>
+        <td style="text-align:center"><input type="number" min="1" max="31" value="${p.end_day}" id="bp-end-${key}" style="width:56px;text-align:center">일</td>
+        <td style="text-align:center"><input type="number" min="1" max="31" value="${p.payment_day||''}" id="bp-pay-${key}" placeholder="–" style="width:56px;text-align:center">일</td>
+        <td><input value="${p.label||''}" id="bp-label-${key}" placeholder="예) 매월 1일~말일" style="width:100%"></td>
+        <td><button class="btn btn-sm btn-primary" onclick="saveBillingPeriodWeb('${iss.replace(/'/g,"\\\\'")}','${key}')">저장</button></td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+async function saveBillingPeriodWeb(issuer,key){
+  const payload={
+    issuer,
+    start_day:parseInt(document.getElementById(`bp-start-${key}`).value)||1,
+    end_day:parseInt(document.getElementById(`bp-end-${key}`).value)||31,
+    payment_day:parseInt(document.getElementById(`bp-pay-${key}`).value)||null,
+    label:document.getElementById(`bp-label-${key}`).value.trim()
+  };
+  const {error}=await sb.from('billing_periods_shared').upsert(payload,{onConflict:'issuer'});
+  if(error){ alert('저장 실패: '+error.message); return; }
+  _billingPeriods[issuer]=payload;
+  alert('저장되었습니다.');
 }
 
 // ===== 설정: 부서명 관리 =====
@@ -1965,7 +2019,7 @@ async function loadTx(){
   // Supabase 기본 조회 제한(1000건)을 넘길 수 있도록 페이지 단위로 전부 가져옴
   let all=[], from=0, pageSize=1000;
   while(true){
-    const {data,error}=await sb.from('tx_shared').select('*').order('date',{ascending:false}).range(from,from+pageSize-1);
+    const {data,error}=await sb.from('tx_shared').select('*').order('date',{ascending:false}).order('datetime',{ascending:false}).range(from,from+pageSize-1);
     if(error){ document.getElementById('tx-status').textContent='오류: '+error.message; return; }
     all=all.concat(data||[]);
     if(!data||data.length<pageSize) break;
