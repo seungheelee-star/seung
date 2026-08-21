@@ -74,6 +74,10 @@
   .progress-bar{height:100%;background:var(--success)}
   .progress-bar.warn{background:var(--warning)}
   .progress-bar.danger{background:var(--danger)}
+  .period-group{display:inline-flex;align-items:center;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:2px;gap:1px}
+  .period-btn{padding:5px 12px;font-size:12px;font-weight:500;color:var(--text2);border-radius:6px;cursor:pointer;border:none;background:transparent;transition:all .15s}
+  .period-btn:hover{background:var(--card-bg);color:var(--text)}
+  .period-btn.active{background:var(--card-bg);color:var(--primary);font-weight:600;box-shadow:var(--shadow)}
   .lb-table{border-collapse:collapse;min-width:900px;width:100%}
   .lb-table input,.lb-table textarea{width:100%;border:none;background:transparent;font-size:12px}
   .lb-table textarea{min-height:50px;resize:vertical}
@@ -135,11 +139,26 @@
       </div>
     </div>
     <div class="card">
+      <div class="period-group" id="cs-period-group">
+        <button class="period-btn" data-period="day" onclick="setPeriodModeWeb('cs','day')">일</button>
+        <button class="period-btn" data-period="week" onclick="setPeriodModeWeb('cs','week')">주</button>
+        <button class="period-btn active" data-period="month" onclick="setPeriodModeWeb('cs','month')">월</button>
+        <button class="period-btn" data-period="quarter" onclick="setPeriodModeWeb('cs','quarter')">분기</button>
+        <button class="period-btn" data-period="year" onclick="setPeriodModeWeb('cs','year')">연</button>
+        <button class="period-btn" data-period="custom" onclick="setPeriodModeWeb('cs','custom')">기간선택</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin:8px 0;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="shiftPeriodWeb('cs',-1)">◀</button>
+        <span id="cs-period-label" style="font-size:13px;font-weight:600;min-width:140px;text-align:center"></span>
+        <button class="btn btn-sm" onclick="shiftPeriodWeb('cs',1)">▶</button>
+        <div id="cs-period-custom" style="display:none;align-items:center;gap:6px">
+          <input type="date" id="cs-from" onchange="renderCardStmt()">
+          <span style="color:var(--text2);font-size:12px">~</span>
+          <input type="date" id="cs-to" onchange="renderCardStmt()">
+        </div>
+      </div>
       <div class="filters">
         <input type="text" id="cs-search" placeholder="가맹점 검색" oninput="renderCardStmt()">
-        <input type="date" id="cs-from" onchange="renderCardStmt()">
-        <span style="color:var(--text2);font-size:12px">~</span>
-        <input type="date" id="cs-to" onchange="renderCardStmt()">
         <select id="cs-card-filter" onchange="renderCardStmt()"><option value="">전체 카드</option></select>
         <select id="cs-region-filter" onchange="renderCardStmt()">
           <option value="">국내+해외</option>
@@ -200,9 +219,26 @@
 
       <!-- 전체 내역 -->
       <div id="wh-tab-list" style="display:none;padding:16px">
+        <div class="period-group" id="wh-period-group">
+          <button class="period-btn" data-period="day" onclick="setPeriodModeWeb('wh','day')">일</button>
+          <button class="period-btn" data-period="week" onclick="setPeriodModeWeb('wh','week')">주</button>
+          <button class="period-btn active" data-period="month" onclick="setPeriodModeWeb('wh','month')">월</button>
+          <button class="period-btn" data-period="quarter" onclick="setPeriodModeWeb('wh','quarter')">분기</button>
+          <button class="period-btn" data-period="year" onclick="setPeriodModeWeb('wh','year')">연</button>
+          <button class="period-btn" data-period="custom" onclick="setPeriodModeWeb('wh','custom')">기간선택</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin:8px 0;flex-wrap:wrap">
+          <button class="btn btn-sm" onclick="shiftPeriodWeb('wh',-1)">◀</button>
+          <span id="wh-period-label" style="font-size:13px;font-weight:600;min-width:140px;text-align:center"></span>
+          <button class="btn btn-sm" onclick="shiftPeriodWeb('wh',1)">▶</button>
+          <div id="wh-period-custom" style="display:none;align-items:center;gap:6px">
+            <input type="date" id="wh-from" onchange="renderWihago()">
+            <span style="color:var(--text2);font-size:12px">~</span>
+            <input type="date" id="wh-to" onchange="renderWihago()">
+          </div>
+        </div>
         <div class="filters">
           <input type="text" id="wh-search" placeholder="가맹점/내용 검색" oninput="renderWihago()">
-          <input type="month" id="wh-month" onchange="renderWihago()">
           <select id="wh-dept-filter" class="dept-filter-select" onchange="renderWihago()"><option value="">전체 부서</option></select>
         </div>
         <div style="overflow-x:auto">
@@ -308,7 +344,25 @@
       </div>
     </div>
     <div class="card">
-      <div class="filters">
+      <div class="period-group" id="tx-period-group">
+        <button class="period-btn" data-period="day" onclick="setPeriodModeWeb('tx','day')">일</button>
+        <button class="period-btn" data-period="week" onclick="setPeriodModeWeb('tx','week')">주</button>
+        <button class="period-btn active" data-period="month" onclick="setPeriodModeWeb('tx','month')">월</button>
+        <button class="period-btn" data-period="quarter" onclick="setPeriodModeWeb('tx','quarter')">분기</button>
+        <button class="period-btn" data-period="year" onclick="setPeriodModeWeb('tx','year')">연</button>
+        <button class="period-btn" data-period="custom" onclick="setPeriodModeWeb('tx','custom')">기간선택</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="shiftPeriodWeb('tx',-1)">◀</button>
+        <span id="tx-period-label" style="font-size:13px;font-weight:600;min-width:160px;text-align:center"></span>
+        <button class="btn btn-sm" onclick="shiftPeriodWeb('tx',1)">▶</button>
+        <div id="tx-period-custom" style="display:none;align-items:center;gap:6px">
+          <input type="date" id="tx-from" onchange="renderTx()">
+          <span style="color:var(--text2);font-size:12px">~</span>
+          <input type="date" id="tx-to" onchange="renderTx()">
+        </div>
+      </div>
+      <div class="filters" style="margin-top:10px">
         <select id="tx-card-filter"><option value="">전체 카드</option></select>
         <select id="tx-source-filter">
           <option value="">전체 구분</option>
@@ -316,9 +370,6 @@
           <option value="upload">업로드</option>
           <option value="manual">수동입력</option>
         </select>
-        <input type="date" id="tx-from">
-        <span style="color:var(--text2);font-size:12px">~</span>
-        <input type="date" id="tx-to">
         <input type="text" id="tx-search" placeholder="가맹점 검색" oninput="renderTx()">
         <button class="btn btn-primary btn-sm" onclick="renderTx()">조회</button>
       </div>
@@ -1341,6 +1392,70 @@ async function addCardWeb(){
   loadSettings();
 }
 
+// ===== 공통 기간 선택 엔진 (일/주/월/분기/연/기간선택) =====
+const _periodState={};
+const _periodRenderFn={tx:()=>renderTx(),wh:()=>renderWihago(),cs:()=>renderCardStmt()};
+function _periodGet(pageKey){ if(!_periodState[pageKey]) _periodState[pageKey]={mode:'month',offset:0}; return _periodState[pageKey]; }
+function setPeriodModeWeb(pageKey,mode){
+  const st=_periodGet(pageKey); st.mode=mode; st.offset=0;
+  document.querySelectorAll(`#${pageKey}-period-group .period-btn`).forEach(b=>b.classList.toggle('active',b.dataset.period===mode));
+  const customEl=document.getElementById(`${pageKey}-period-custom`);
+  if(customEl) customEl.style.display=mode==='custom'?'flex':'none';
+  _applyPeriodWeb(pageKey);
+}
+function shiftPeriodWeb(pageKey,dir){
+  const st=_periodGet(pageKey);
+  if(st.mode==='custom') return;
+  st.offset+=dir;
+  _applyPeriodWeb(pageKey);
+}
+function getPeriodRangeWeb(pageKey){
+  const st=_periodGet(pageKey);
+  const now=new Date();
+  let from,to,label;
+  if(st.mode==='day'){
+    const d=new Date(now); d.setDate(d.getDate()+st.offset);
+    from=to=d.toISOString().slice(0,10);
+    label=`${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일`;
+  } else if(st.mode==='week'){
+    const d=new Date(now); d.setDate(d.getDate()+st.offset*7);
+    const day=d.getDay()||7; const mon=new Date(d); mon.setDate(d.getDate()-day+1);
+    const sun=new Date(mon); sun.setDate(mon.getDate()+6);
+    from=mon.toISOString().slice(0,10); to=sun.toISOString().slice(0,10);
+    label=`${from} ~ ${to}`;
+  } else if(st.mode==='month'){
+    const d=new Date(now.getFullYear(),now.getMonth()+st.offset,1);
+    const last=new Date(d.getFullYear(),d.getMonth()+1,0);
+    from=d.toISOString().slice(0,10); to=last.toISOString().slice(0,10);
+    label=`${d.getFullYear()}년 ${d.getMonth()+1}월`;
+  } else if(st.mode==='quarter'){
+    const curQ=Math.floor(now.getMonth()/3);
+    const totalQ=now.getFullYear()*4+curQ+st.offset;
+    const y=Math.floor(totalQ/4), q=totalQ%4;
+    const d=new Date(y,q*3,1); const last=new Date(y,q*3+3,0);
+    from=d.toISOString().slice(0,10); to=last.toISOString().slice(0,10);
+    label=`${y}년 ${q+1}분기`;
+  } else if(st.mode==='year'){
+    const y=now.getFullYear()+st.offset;
+    from=`${y}-01-01`; to=`${y}-12-31`;
+    label=`${y}년`;
+  } else {
+    from=document.getElementById(`${pageKey}-from`)?.value||'';
+    to=document.getElementById(`${pageKey}-to`)?.value||'';
+    label=from||to?`${from||'…'} ~ ${to||'…'}`:'기간 미선택';
+  }
+  return {from,to,label};
+}
+function _applyPeriodWeb(pageKey){
+  const {from,to,label}=getPeriodRangeWeb(pageKey);
+  const labelEl=document.getElementById(`${pageKey}-period-label`);
+  if(labelEl) labelEl.textContent=label;
+  const fromEl=document.getElementById(`${pageKey}-from`), toEl=document.getElementById(`${pageKey}-to`);
+  if(fromEl&&_periodGet(pageKey).mode!=='custom') fromEl.value=from;
+  if(toEl&&_periodGet(pageKey).mode!=='custom') toEl.value=to;
+  if(_periodRenderFn[pageKey]) _periodRenderFn[pageKey]();
+}
+
 // ===== 국세청 사업자등록정보 상태조회 =====
 function saveNtsApiKeyWeb(){
   const k=document.getElementById('nts-api-key').value.trim();
@@ -1526,6 +1641,7 @@ function renderCardStmt(){
   </tr>`).join('');
 }
 function csSelectMonth(m){
+  setPeriodModeWeb('cs','custom');
   document.getElementById('cs-from').value=m+'-01';
   const [y,mo]=m.split('-').map(Number);
   const last=new Date(y,mo,0).getDate();
@@ -1617,11 +1733,13 @@ function renderWihago(){
 
   if(_whTab==='list'){
     const q=(document.getElementById('wh-search').value||'').trim();
-    const month=document.getElementById('wh-month').value;
+    const from=document.getElementById('wh-from')?.value||'';
+    const to=document.getElementById('wh-to')?.value||'';
     const dept=document.getElementById('wh-dept-filter').value;
     let rows=_whRows;
     if(q) rows=rows.filter(r=>(r.content||'').includes(q)||(r.partner||'').includes(q));
-    if(month) rows=rows.filter(r=>(r.date||'').startsWith(month));
+    if(from) rows=rows.filter(r=>(r.date||'')>=from);
+    if(to) rows=rows.filter(r=>(r.date||'')<=to);
     if(dept) rows=rows.filter(r=>(r.dept||'')===dept);
     const tbody=document.getElementById('wh-tbody');
     if(!rows.length){ tbody.innerHTML='<tr><td colspan="8" class="empty">데이터 없음</td></tr>'; return; }
@@ -2563,6 +2681,9 @@ async function saveLbCell(team,month,key,value){
 }
 
 renderSidebarWeb();
+_applyPeriodWeb('tx');
+_applyPeriodWeb('wh');
+_applyPeriodWeb('cs');
 loadHome();
 document.getElementById('sidebarToggle').addEventListener('click',()=>{
   document.getElementById('sidebar').classList.toggle('collapsed');
