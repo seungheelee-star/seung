@@ -2254,31 +2254,37 @@ function exportCsWeb(){
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'법인카드이용대금');
   XLSX.writeFile(wb,`법인카드이용대금_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
-function generateLbSlackMessageWeb(){
-  const {result,months}=lbCalc();
+function _lbSlackCurMonth(){
+  const {months}=lbCalc();
   const now=new Date();
   const curMonth=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const mo=months.includes(curMonth)?curMonth:months[months.length-1];
+  return months.includes(curMonth)?curMonth:months[months.length-1];
+}
+function _lbSlackTextForTeam(team){
+  const {result}=lbCalc();
+  const mo=_lbSlackCurMonth();
   const moLabel=mo.slice(2).replace('-','.');
-  const lines=[`📊 *리더활동비 현황 안내 (${moLabel}월 기준)*`,''];
-  LB_TEAMS.forEach(team=>{
-    const r=result[team][mo];
-    if(!r) return;
-    const carryTxt=r.carry?` + 이월 ${fmt(r.carry)}원`:'';
-    lines.push(`• *${team}*: 예산 ${fmt(r.budget)}원${carryTxt} - 사용 ${fmt(r.used)}원 = *잔액 ${fmt(r.zan)}원*`);
-  });
-  lines.push('');
-  lines.push('사용처: 커피/식사/문화활동(챕터 전원 참석) · 문의사항 있으면 알려주세요 🙏');
-  const text=lines.join('\n');
-
+  const r=result[team]?.[mo];
+  if(!r) return '';
+  const carryTxt=r.carry?` + 이월 ${fmt(r.carry)}원`:'';
+  return [
+    `📊 *${team} 리더활동비 현황 안내 (${moLabel}월 기준)*`,
+    '',
+    `예산 ${fmt(r.budget)}원${carryTxt} - 사용 ${fmt(r.used)}원 = *잔액 ${fmt(r.zan)}원*`,
+    '',
+    '사용처: 커피/식사/문화활동(챕터 전원 참석) · 문의사항 있으면 알려주세요 🙏'
+  ].join('\n');
+}
+function generateLbSlackMessageWeb(){
   let modal=document.getElementById('lb-slack-modal');
   if(!modal){
     modal=document.createElement('div');
     modal.id='lb-slack-modal';
     modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:200';
     modal.innerHTML=`<div class="card" style="width:480px;max-width:92vw;margin:0">
-      <div class="card-title">슬랙 메시지 생성</div>
-      <textarea id="lb-slack-text" style="width:100%;min-height:260px;font-family:inherit;font-size:13px;padding:10px;border:1px solid var(--border);border-radius:8px"></textarea>
+      <div class="card-title">슬랙 메시지 생성 (팀별)</div>
+      <select id="lb-slack-team-select" onchange="updateLbSlackTextWeb()" style="margin-bottom:8px"></select>
+      <textarea id="lb-slack-text" style="width:100%;min-height:220px;font-family:inherit;font-size:13px;padding:10px;border:1px solid var(--border);border-radius:8px"></textarea>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
         <button class="btn btn-sm" onclick="document.getElementById('lb-slack-modal').style.display='none'">닫기</button>
         <button class="btn btn-sm btn-primary" onclick="copyLbSlackTextWeb()">📋 복사하기</button>
@@ -2286,8 +2292,14 @@ function generateLbSlackMessageWeb(){
     </div>`;
     document.body.appendChild(modal);
   }
-  document.getElementById('lb-slack-text').value=text;
+  const sel=document.getElementById('lb-slack-team-select');
+  sel.innerHTML=LB_TEAMS.map(t=>`<option value="${t}">${t}</option>`).join('');
+  updateLbSlackTextWeb();
   modal.style.display='flex';
+}
+function updateLbSlackTextWeb(){
+  const team=document.getElementById('lb-slack-team-select').value;
+  document.getElementById('lb-slack-text').value=_lbSlackTextForTeam(team);
 }
 function copyLbSlackTextWeb(){
   const ta=document.getElementById('lb-slack-text');
