@@ -240,6 +240,8 @@
         <div class="filters">
           <input type="text" id="wh-search" placeholder="가맹점/내용 검색" oninput="renderWihago()">
           <select id="wh-dept-filter" class="dept-filter-select" onchange="renderWihago()"><option value="">전체 부서</option></select>
+          <span style="flex:1"></span>
+          <button class="btn btn-sm" onclick="exportWihagoWeb()">📥 엑셀 다운로드</button>
         </div>
         <div style="overflow-x:auto">
           <table>
@@ -277,10 +279,25 @@
   <!-- 카드별 현황 -->
   <!-- 홈 -->
   <div class="page active" id="page-home">
-    <div class="card" style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-      <label style="font-size:12px;color:var(--text2)">조회 기간</label>
-      <input type="month" id="home-month" onchange="loadHome()">
-      <button class="btn btn-sm" onclick="document.getElementById('home-month').value='';loadHome()">이번 달로</button>
+    <div class="card">
+      <div class="period-group" id="home-period-group">
+        <button class="period-btn" data-period="day" onclick="setPeriodModeWeb('home','day')">일</button>
+        <button class="period-btn" data-period="week" onclick="setPeriodModeWeb('home','week')">주</button>
+        <button class="period-btn active" data-period="month" onclick="setPeriodModeWeb('home','month')">월</button>
+        <button class="period-btn" data-period="quarter" onclick="setPeriodModeWeb('home','quarter')">분기</button>
+        <button class="period-btn" data-period="year" onclick="setPeriodModeWeb('home','year')">연</button>
+        <button class="period-btn" data-period="custom" onclick="setPeriodModeWeb('home','custom')">기간선택</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="shiftPeriodWeb('home',-1)">◀</button>
+        <span id="home-period-label" style="font-size:13px;font-weight:600;min-width:160px;text-align:center"></span>
+        <button class="btn btn-sm" onclick="shiftPeriodWeb('home',1)">▶</button>
+        <div id="home-period-custom" style="display:none;align-items:center;gap:6px">
+          <input type="date" id="home-from" onchange="loadHome()">
+          <span style="color:var(--text2);font-size:12px">~</span>
+          <input type="date" id="home-to" onchange="loadHome()">
+        </div>
+      </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px">
       <div class="metric-card" style="border-left:4px solid var(--primary)">
@@ -424,6 +441,10 @@
           <button class="btn btn-sm" onclick="exportLcWeb()">📥 엑셀 다운로드</button>
           <span style="flex:1"></span>
           <button class="btn btn-sm" style="color:#1e40af" onclick="pushLcHistorySnapshotWeb()" title="현재 조회 결과를 대조 이력에 기록">🔗 이력에 기록</button>
+        </div>
+        <div style="margin-top:10px">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:6px">원장 데이터 관리 (월별 선택 삭제)</div>
+          <div id="lc-ledger-manage-web" style="display:flex;flex-wrap:wrap;gap:6px"></div>
         </div>
       </div>
 
@@ -1214,11 +1235,9 @@ async function loadHome(){
     from+=pageSize;
   }
   const cardsList=cards||[];
-  const now=new Date();
-  const monthInput=document.getElementById('home-month').value;
-  const month=monthInput||`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  document.getElementById('home-used-label').textContent=monthInput?`${month} 총 사용`:'이번 달 총 사용';
-  const monthTxs=all.filter(t=>(t.date||'').startsWith(month));
+  const {from:pFrom,to:pTo,label:pLabel}=getPeriodRangeWeb('home');
+  document.getElementById('home-used-label').textContent=`${pLabel} 총 사용`;
+  const monthTxs=all.filter(t=>(!pFrom||(t.date||'')>=pFrom)&&(!pTo||(t.date||'')<=pTo));
   function usedFor(c){ return monthTxs.filter(t=>t.last4===c.last4).reduce((s,t)=>s+Math.max(t.amount||0,0),0); }
 
   let totalLimit=0,totalUsed=0,warnCount=0;
@@ -1448,7 +1467,7 @@ async function addCardWeb(){
 
 // ===== 공통 기간 선택 엔진 (일/주/월/분기/연/기간선택) =====
 const _periodState={};
-const _periodRenderFn={tx:()=>renderTx(),wh:()=>renderWihago(),cs:()=>renderCardStmt()};
+const _periodRenderFn={tx:()=>renderTx(),wh:()=>renderWihago(),cs:()=>renderCardStmt(),home:()=>loadHome()};
 function _periodGet(pageKey){ if(!_periodState[pageKey]) _periodState[pageKey]={mode:'month',offset:0}; return _periodState[pageKey]; }
 function setPeriodModeWeb(pageKey,mode){
   const st=_periodGet(pageKey); st.mode=mode; st.offset=0;
@@ -2198,6 +2217,23 @@ function exportTxWeb(){
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'이용내역');
   XLSX.writeFile(wb,`이용내역_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
+function exportWihagoWeb(){
+  const q=(document.getElementById('wh-search').value||'').trim();
+  const from=document.getElementById('wh-from')?.value||'';
+  const to=document.getElementById('wh-to')?.value||'';
+  const dept=document.getElementById('wh-dept-filter').value;
+  let rows=_whRows;
+  if(q) rows=rows.filter(r=>(r.content||'').includes(q)||(r.partner||'').includes(q));
+  if(from) rows=rows.filter(r=>(r.date||'')>=from);
+  if(to) rows=rows.filter(r=>(r.date||'')<=to);
+  if(dept) rows=rows.filter(r=>(r.dept||'')===dept);
+  if(!rows.length){ alert('내보낼 데이터가 없습니다.'); return; }
+  const aoa=[['날짜','사용자','부서','내용','용도','거래처','금액','상태']];
+  rows.forEach(r=>aoa.push([r.date||'',r.user_name||'',r.dept||'',r.content||'',r.category||'',r.partner||'',r.amount||0,r.status||'']));
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'위하고경비');
+  XLSX.writeFile(wb,`위하고경비_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
 function exportCsWeb(){
   const q=(document.getElementById('cs-search').value||'').trim();
   const from=document.getElementById('cs-from').value;
@@ -2265,6 +2301,12 @@ function _lcRowKeyWeb(r){
   return txPart||entryPart;
 }
 let _lcLastMatched=[], _lcLastDiffRows=[];
+async function deleteLedgerMonthWeb(month){
+  if(!confirm(`${month} 원장 데이터를 삭제하시겠습니까? (공유 서버의 모든 사용자에게 영향을 줍니다)`)) return;
+  const {error}=await sb.from('ledger_shared').delete().gte('date',`${month}-01`).lte('date',`${month}-31`);
+  if(error){ alert('삭제 실패: '+error.message); return; }
+  loadLc();
+}
 async function loadLc(){
   document.getElementById('lc-status').textContent='⏳ 대조 실행 중...';
   const month=document.getElementById('lc-month-filter').value;
@@ -2297,6 +2339,15 @@ async function loadLc(){
   const monthSel=document.getElementById('lc-month-filter');
   monthSel.innerHTML='<option value="">전체 기간</option>'+allMonths.map(m=>`<option value="${m}">${m}</option>`).join('');
   if(allMonths.includes(month)) monthSel.value=month;
+
+  // 원장 데이터 관리 (업로드된 월별 선택 삭제)
+  const ledgerMonths=[...new Set(allLedger.map(e=>(e.date||'').slice(0,7)).filter(Boolean))].sort();
+  const manageEl=document.getElementById('lc-ledger-manage-web');
+  if(manageEl){
+    manageEl.innerHTML=ledgerMonths.length?ledgerMonths.map(m=>
+      `<button class="btn btn-sm" style="color:var(--danger)" onclick="deleteLedgerMonthWeb('${m}')">${m} 삭제</button>`
+    ).join(''):'<span style="font-size:12px;color:var(--text3)">업로드된 원장 데이터 없음</span>';
+  }
 
   const inPeriod=d=>!month||(d||'').startsWith(month);
 
@@ -2738,7 +2789,7 @@ renderSidebarWeb();
 _applyPeriodWeb('tx');
 _applyPeriodWeb('wh');
 _applyPeriodWeb('cs');
-loadHome();
+_applyPeriodWeb('home');
 document.getElementById('sidebarToggle').addEventListener('click',()=>{
   document.getElementById('sidebar').classList.toggle('collapsed');
 });
