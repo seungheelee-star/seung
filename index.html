@@ -500,7 +500,7 @@
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
         <div>
           <div style="font-size:16px;font-weight:700">리더활동비 정산</div>
-          <div style="font-size:12px;color:var(--text2);margin-top:2px">예산 5만원/인/월 · 분기 단위 사용 · 분기 내 1개월만 잔액 이월 가능 · 중도입사(1~26일) 전액 지급 · 중도퇴사(1~26일) 일할 차감</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">예산 5만원/인/월 · 매월 전액 소진이 원칙이나 분기 내에서 전월 잔여액 이월 가능 · 중도입사(1~26일) 전액 지급 · 중도퇴사(1~26일) 일할 차감</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <label style="font-size:12px;color:var(--text2)">예산/인</label>
@@ -796,7 +796,7 @@ function renderMenuSettingsWeb(){
 function fmt(n){ return (n||n===0)?Number(n).toLocaleString('ko-KR'):'—'; }
 
 // ===== 고위드 API 직접 연동 =====
-const GAS_PROXY='https://script.google.com/macros/s/AKfycbyNd8r2v7ZxURA3eHQtGlAtHVciGGb33jiNqE_QLpeIZ1NA0KKWXdrFpsskKu-W4z1t/exec';
+const GAS_PROXY='https://script.google.com/macros/s/AKfycbyylIXR4nCeHUPjyu98NfFgjBwRbV0HTqQm6Qd8f4KEPYzHbodka7eCzJTgmxC5WI8E/exec';
 async function gasFetch(path, qs=''){
   const bust=`_cb=${Date.now()}`;
   const fullQs=(qs?qs+'&':'')+bust;
@@ -2684,11 +2684,12 @@ function lbCalc(){
   const result={};
   LB_TEAMS.forEach(team=>{
     result[team]={};
-    let prevZan=0, curQ='', carryUsed=false;
+    // 이월 규칙: 매월 전액 소진이 원칙이나, 분기 내에서는 전월 잔여액(잔액)이 다음 달로 이월됨. 분기가 바뀌면 소멸
+    let prevZan=0, curQ='';
     months.forEach(mo=>{
       const qKey=lbQuarterKey(mo);
       const newQuarter=qKey!==curQ;
-      if(newQuarter){ curQ=qKey; carryUsed=false; }
+      if(newQuarter){ curQ=qKey; }
       const rec=(_lbData[team]||{})[mo]||{};
       const roster=rec.roster||'';
       let hc,budget;
@@ -2699,8 +2700,7 @@ function lbCalc(){
         hc=rec.headcount||0;
         budget=hc*bpp;
       }
-      let carry=0;
-      if(!newQuarter&&!carryUsed&&prevZan>0){ carry=prevZan; carryUsed=true; }
+      const carry=(!newQuarter&&prevZan>0)?prevZan:0;
       const used=rec.expenses_manual||0;
       const zan=budget+carry-used;
       result[team][mo]={hc,budget,carry,used,roster,zan};
