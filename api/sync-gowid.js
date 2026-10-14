@@ -3,7 +3,7 @@
 
 const SUPABASE_URL = 'https://rqkkvpugddndzgcbaaqo.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_rD4o24OUdMM3OIZxYNKIuA_2cMY_tDV';
-const GAS_PROXY = 'https://script.google.com/macros/s/AKfycbyNd8r2v7ZxURA3eHQtGlAtHVciGGb33jiNqE_QLpeIZ1NA0KKWXdrFpsskKu-W4z1t/exec';
+const GAS_PROXY = 'https://script.google.com/macros/s/AKfycbyylIXR4nCeHUPjyu98NfFgjBwRbV0HTqQm6Qd8f4KEPYzHbodka7eCzJTgmxC5WI8E/exec';
 
 async function gasFetch(path, qs) {
   const bust = `_cb=${Date.now()}`;
