@@ -484,9 +484,17 @@
           <select id="lc-dept-filter" class="dept-filter-select" onchange="renderLc()"><option value="">전체 부서</option></select>
         </div>
         <div class="status-msg" id="lc-status"></div>
+        <div id="lc-bulk-bar" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;margin-bottom:10px;background:var(--primary-light);border:1px solid var(--primary);border-radius:8px">
+          <span id="lc-bulk-count" style="font-size:13px;font-weight:700;color:var(--primary)"></span>
+          <input id="lc-bulk-memo" placeholder="공통 비고 (예: 환율차이 확인)" style="width:280px">
+          <button class="btn btn-sm btn-primary" onclick="lcBulkProcessWeb(true)">선택 항목 처리</button>
+          <button class="btn btn-sm" onclick="lcBulkProcessWeb(false)">선택 항목 처리취소</button>
+          <button class="btn btn-sm" onclick="lcToggleAllWeb(false)">선택 해제</button>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px">체크박스로 여러 건을 고르거나 맨 위 체크박스로 현재 화면(필터 적용된 목록) 전체를 선택할 수 있어요. 예: "금액차이" 필터 → 전체 선택 → 공통 비고 입력 → 처리</div>
         <div style="overflow-x:auto">
           <table>
-            <thead><tr><th>판정</th><th>날짜</th><th>부서</th><th>카드</th><th>가맹점/거래처</th><th style="text-align:right">카드금액</th><th style="text-align:right">원장금액</th><th style="text-align:right">차액</th><th>처리</th><th>비고</th></tr></thead>
+            <thead><tr><th style="width:28px"><input type="checkbox" id="lc-check-all" onchange="lcToggleAllWeb(this.checked)" title="현재 화면 전체 선택"></th><th>판정</th><th>날짜</th><th>부서</th><th>카드</th><th>가맹점/거래처</th><th style="text-align:right">카드금액</th><th style="text-align:right">원장금액</th><th style="text-align:right">차액</th><th>처리</th><th>비고</th></tr></thead>
             <tbody id="lc-tbody"></tbody>
           </table>
         </div>
@@ -2371,12 +2379,15 @@ async function loadLc(){
 
   let allTx=[], from=0, pageSize=1000;
   while(true){
-    const {data,error}=await sb.from('tx_shared').select('*').eq('source','upload').range(from,from+pageSize-1);
+    // 업로드(카드사 승인내역)가 기본 대조 대상이고, 고위드 내역은 원장과 안 맞은 건에 한해 보조로만 사용
+    const {data,error}=await sb.from('tx_shared').select('*').in('source',['upload','gowid']).range(from,from+pageSize-1);
     if(error){ document.getElementById('lc-status').textContent='오류: '+error.message; return; }
     allTx=allTx.concat(data||[]);
     if(!data||data.length<pageSize) break;
     from+=pageSize;
   }
+  const gowidAllTx=allTx.filter(t=>t.source==='gowid');
+  allTx=allTx.filter(t=>t.source==='upload');
   let allLedger=[]; from=0;
   while(true){
     const {data,error}=await sb.from('ledger_shared').select('*').eq('account_type','미지급금').gt('credit',0).range(from,from+pageSize-1);
@@ -2457,6 +2468,22 @@ async function loadLc(){
   tryMatch(ledgerEntries,txs,(t,e)=>cardOk(t,e)&&dayDiff(t,e)<=3&&amtFuzzyFx(t,e));
   tryMatch(ledgerEntries,txs,(t,e)=>cardOk(t,e)&&dayDiff(t,e)<=5&&e.credit>0&&Math.abs(t.amount-e.credit)/e.credit<=0.01);
 
+  // 7순위(해외 전용): 해외 거래는 환율·수수료로 금액이 달라지고 원장 반영이 늦으므로 날짜±7일 + 금액±10%까지 허용 → 금액차이
+  const foreignLike=t=>!!t.isForeign||(/[A-Za-z]/.test(t.merchant||'')&&!/[가-힣]/.test(t.merchant||''));
+  tryMatch(ledgerEntries,txs.filter(foreignLike),(t,e)=>cardOk(t,e)&&dayDiff(t,e)<=7&&e.credit>0&&Math.abs(t.amount-e.credit)/e.credit<=0.10);
+
+  // 8순위(고위드 보조): 위 단계로도 못 맞춘 원장에 한해 고위드 내역과 대조. 카드 끝 4자리가 반드시 같아야 하고,
+  //  금액이 같으면 일치, 환율·수수료 차이(±5%, 날짜±7일)면 금액차이로 표시
+  const matchedKeys=new Set();
+  [...matched.map(m=>m.tx),...diffRows.filter(r=>r.tx).map(r=>r.tx)].forEach(t=>matchedKeys.add(`${t.last4}|${t.date}|${t.amount}`));
+  const gowidPool=gowidAllTx.map(t=>({...t,_date:t.date||(t.datetime||'').slice(0,10)})).filter(t=>t._date&&(t.amount||0)>0).map(t=>{
+    const card=cards.find(c=>c.last4===t.last4);
+    return {id:t.id,date:t._date,merchant:t.merchant||'',amount:t.amount||0,last4:t.last4||'',dept:card?.dept||'',cardName:t.card_name||'',isForeign:false,approvalNo:'',source:'gowid'};
+  }).filter(t=>!matchedKeys.has(`${t.last4}|${t.date}|${t.amount}`)); // 이미 업로드 내역으로 맞춘 거래의 고위드 사본은 제외
+  const strictCard=(t,e)=>!!(t.last4&&e.last4&&t.last4===e.last4);
+  tryMatch(ledgerEntries,gowidPool,(t,e)=>strictCard(t,e)&&dayDiff(t,e)<=3&&amtExact(t,e));
+  tryMatch(ledgerEntries,gowidPool,(t,e)=>strictCard(t,e)&&dayDiff(t,e)<=7&&e.credit>0&&Math.abs(t.amount-e.credit)/e.credit<=0.05);
+
   const missingTxs=txs.filter(t=>!matchedTxIds.has(t.id));
   const overLedger=ledgerEntries.filter(e=>!matchedLedgerIds.has(e.id));
   missingTxs.forEach(t=>diffRows.push({type:'누락',tx:t,entry:null,diff:t.amount,isForeign:!!t.isForeign}));
@@ -2476,7 +2503,7 @@ async function loadLc(){
     date:r.tx?.date||r.entry?.date||'', dept:r.tx?.dept||'', last4:r.tx?.last4||r.entry?.last4||'',
     merchant:r.tx?.merchant||'', partner:r.entry?.partner||'',
     approval_no:r.tx?.approvalNo||'', tx_amount:r.tx?.amount??null, entry_amount:r.entry?.credit??null,
-    diff:r.diff||0, is_foreign:!!r.isForeign
+    diff:r.diff||0, is_foreign:!!r.isForeign, via:r.tx?.source==='gowid'?'gowid':''
   })).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 
   refreshDeptFilterOptions(_lcRows.map(r=>r.dept));
@@ -2564,16 +2591,20 @@ function renderLc(){
   else rows=rows.filter(r=>!r.isDone);
   if(deptF) rows=rows.filter(r=>(r.dept||'')===deptF);
   const tbody=document.getElementById('lc-tbody');
-  if(!rows.length){ tbody.innerHTML='<tr><td colspan="10" class="empty">해당 항목 없음</td></tr>'; return; }
-  tbody.innerHTML=rows.map(r=>{
-    const doneBtn=r.type!=='일치'?`<button class="btn btn-sm" onclick="toggleLcProcessed('${r.row_key}','${r.type}')">${r.isDone?'처리취소':'처리'}</button>`:'';
-    const memoCell=`<input class="memo-input" value="${(r.proc?.memo||'').replace(/"/g,'&quot;')}" placeholder="비고" onchange="saveLcMemo('${r.row_key}',this.value)" ${r.isDone?'':'disabled'}>`;
+  _lcViewRows=rows; // 일괄 선택/처리에서 화면 행을 인덱스로 참조 (거래처명에 따옴표가 있어도 안전)
+  const allChk=document.getElementById('lc-check-all'); if(allChk) allChk.checked=false;
+  if(!rows.length){ tbody.innerHTML='<tr><td colspan="11" class="empty">해당 항목 없음</td></tr>'; lcUpdateBulkBar(); return; }
+  tbody.innerHTML=rows.map((r,i)=>{
+    const doneBtn=r.type!=='일치'?`<button class="btn btn-sm" onclick="toggleLcProcessedIdx(${i})">${r.isDone?'처리취소':'처리'}</button>`:'';
+    const memoCell=`<input class="memo-input" value="${(r.proc?.memo||'').replace(/"/g,'&quot;')}" placeholder="비고" onchange="saveLcMemoIdx(${i},this.value)" ${r.isDone?'':'disabled'}>`;
+    const chk=r.type!=='일치'?`<input type="checkbox" class="lc-check" data-i="${i}" onchange="lcUpdateBulkBar()">`:'';
     return `<tr>
+      <td style="width:28px">${chk}</td>
       <td><span class="badge" style="${typeStyle[r.type]||''}">${r.type}</span></td>
       <td style="white-space:nowrap">${r.date||''}</td>
       <td>${r.dept||''}</td>
       <td>${r.last4||'—'}</td>
-      <td>${r.merchant||''}${r.partner?`<br><span style="font-size:11px;color:var(--text2)">${r.partner}</span>`:''}</td>
+      <td>${r.merchant||''}${r.via==='gowid'?' <span class="badge" style="background:var(--primary-light);color:var(--primary)" title="카드사 승인내역 업로드가 없어 고위드 내역으로 대조한 건">고위드</span>':''}${r.partner?`<br><span style="font-size:11px;color:var(--text2)">${r.partner}</span>`:''}</td>
       <td style="text-align:right">${fmt(r.tx_amount)}</td>
       <td style="text-align:right">${fmt(r.entry_amount)}</td>
       <td style="text-align:right;color:${r.diff>0?'var(--danger)':r.diff<0?'#3B82F6':'inherit'}">${r.type==='일치'?'0':fmt(r.diff)}</td>
@@ -2581,6 +2612,69 @@ function renderLc(){
       <td>${memoCell}</td>
     </tr>`;
   }).join('');
+  lcUpdateBulkBar();
+}
+
+// ===== 대조현황 일괄 선택/처리 =====
+let _lcViewRows=[];
+function lcUpdateBulkBar(){
+  const checks=[...document.querySelectorAll('.lc-check')];
+  const n=checks.filter(c=>c.checked).length;
+  const bar=document.getElementById('lc-bulk-bar');
+  if(bar) bar.style.display=n?'flex':'none';
+  const cnt=document.getElementById('lc-bulk-count');
+  if(cnt) cnt.textContent=`${n}건 선택됨`;
+  const allChk=document.getElementById('lc-check-all');
+  if(allChk) allChk.checked=checks.length>0&&n===checks.length;
+}
+function lcToggleAllWeb(checked){
+  document.querySelectorAll('.lc-check').forEach(c=>{ c.checked=checked; });
+  lcUpdateBulkBar();
+}
+function _lcSelectedRows(){
+  return [...document.querySelectorAll('.lc-check:checked')].map(c=>_lcViewRows[+c.dataset.i]).filter(Boolean);
+}
+async function lcBulkProcessWeb(doProcess){
+  const rows=_lcSelectedRows().filter(r=>doProcess?!r.isDone:r.isDone);
+  if(!rows.length){ alert(doProcess?'처리할 항목이 없습니다. (이미 처리된 항목은 제외됩니다)':'처리취소할 항목이 없습니다.'); return; }
+  const memo=(document.getElementById('lc-bulk-memo').value||'').trim();
+  if(!confirm(`선택한 ${rows.length}건을 ${doProcess?'처리':'처리취소'}하시겠습니까?${doProcess&&memo?`\n공통 비고: ${memo}`:''}\n(공유 서버의 모든 사용자에게 반영됩니다)`)) return;
+  const btns=document.querySelectorAll('#lc-bulk-bar button'); btns.forEach(b=>b.disabled=true);
+  try{
+    if(doProcess){
+      const now=new Date().toLocaleString('ko-KR');
+      for(let i=0;i<rows.length;i+=200){
+        const chunk=rows.slice(i,i+200).map(r=>({row_key:r.row_key,memo,processed_at:now}));
+        const {error}=await sb.from('lc_shared_processed').upsert(chunk,{onConflict:'row_key'});
+        if(error) throw error;
+      }
+      rows.forEach(r=>{ _lcProcessed[r.row_key]={row_key:r.row_key,memo,processed_at:now}; });
+    } else {
+      for(let i=0;i<rows.length;i+=10){
+        await Promise.all(rows.slice(i,i+10).map(async r=>{
+          const {error}=await sb.from('lc_shared_processed').delete().eq('row_key',r.row_key);
+          if(error) throw error;
+          delete _lcProcessed[r.row_key];
+        }));
+      }
+    }
+    document.getElementById('lc-bulk-memo').value='';
+    const active=_lcRows.filter(r=>!_lcProcessed[r.row_key]);
+    document.getElementById('lc-status').textContent=`미처리 ${active.length}건 (일치 ${active.filter(r=>r.type==='일치').length} · 누락 ${active.filter(r=>r.type==='누락').length} · 원장초과 ${active.filter(r=>r.type==='원장초과').length} · 금액차이 ${active.filter(r=>r.type==='금액차이').length}) · 처리됨 ${_lcRows.length-active.length}건`;
+    renderLc();
+  }catch(e){
+    alert('일괄 처리 중 오류: '+(e.message||e)+'\n일부만 반영됐을 수 있어요. "조회"를 다시 눌러 확인해주세요.');
+  }finally{
+    btns.forEach(b=>b.disabled=false);
+  }
+}
+function toggleLcProcessedIdx(i){
+  const r=_lcViewRows[i]; if(!r) return;
+  return toggleLcProcessed(r.row_key,r.type);
+}
+function saveLcMemoIdx(i,memo){
+  const r=_lcViewRows[i]; if(!r) return;
+  return saveLcMemo(r.row_key,memo);
 }
 async function toggleLcProcessed(rowKey,type){
   if(_lcProcessed[rowKey]){
