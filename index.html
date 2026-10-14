@@ -482,6 +482,7 @@
           <button class="btn" onclick="setLcFilter('금액차이')">금액차이</button>
           <button class="btn" onclick="setLcFilter('처리됨')">처리됨</button>
           <select id="lc-dept-filter" class="dept-filter-select" onchange="renderLc()"><option value="">전체 부서</option></select>
+          <button class="btn btn-sm" id="lc-group-toggle" onclick="lcToggleGroupMode()" title="같은 판정·같은 카드·같은 가맹점을 한 줄로 묶어서 보고, 묶음 단위로 선택/처리합니다">🧩 가맹점·카드별 묶어보기</button>
         </div>
         <div class="status-msg" id="lc-status"></div>
         <div id="lc-bulk-bar" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;margin-bottom:10px;background:var(--primary-light);border:1px solid var(--primary);border-radius:8px">
@@ -492,10 +493,17 @@
           <button class="btn btn-sm" onclick="lcToggleAllWeb(false)">선택 해제</button>
         </div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:6px">체크박스로 여러 건을 고르거나 맨 위 체크박스로 현재 화면(필터 적용된 목록) 전체를 선택할 수 있어요. 예: "금액차이" 필터 → 전체 선택 → 공통 비고 입력 → 처리</div>
-        <div style="overflow-x:auto">
+        <div style="margin-bottom:6px"><label style="font-size:12px;color:var(--text2);cursor:pointer"><input type="checkbox" id="lc-check-all" onchange="lcToggleAllWeb(this.checked)"> 현재 화면 전체 선택</label></div>
+        <div id="lc-row-wrap" style="overflow-x:auto">
           <table>
-            <thead><tr><th style="width:28px"><input type="checkbox" id="lc-check-all" onchange="lcToggleAllWeb(this.checked)" title="현재 화면 전체 선택"></th><th>판정</th><th>날짜</th><th>부서</th><th>카드</th><th>가맹점/거래처</th><th style="text-align:right">카드금액</th><th style="text-align:right">원장금액</th><th style="text-align:right">차액</th><th>처리</th><th>비고</th></tr></thead>
+            <thead><tr><th style="width:28px"></th><th>판정</th><th>날짜</th><th>부서</th><th>카드</th><th>가맹점/거래처</th><th style="text-align:right">카드금액</th><th style="text-align:right">원장금액</th><th style="text-align:right">차액</th><th>처리</th><th>비고</th></tr></thead>
             <tbody id="lc-tbody"></tbody>
+          </table>
+        </div>
+        <div id="lc-group-wrap" style="display:none;overflow-x:auto">
+          <table>
+            <thead><tr><th style="width:28px"></th><th>판정</th><th>카드</th><th>가맹점/거래처</th><th style="text-align:right">건수</th><th>기간</th><th style="text-align:right">카드금액 합</th><th style="text-align:right">원장금액 합</th><th style="text-align:right">차액 합</th><th>처리</th></tr></thead>
+            <tbody id="lc-group-tbody"></tbody>
           </table>
         </div>
       </div>
@@ -2551,13 +2559,69 @@ function switchLcPageTabWeb(tab){
   if(tab==='history') loadLcHistoryWeb();
 }
 function checkBizStatusForLcWeb(){ checkBizStatusWeb(); }
+// 대조현황 엑셀: 화면의 탭 구성과 같게 시트를 나눔 (요약 / 일치 / 누락 / 원장초과 / 금액차이 / 처리됨)
 function exportLcWeb(){
   if(!_lcRows.length){ alert('먼저 조회를 실행해주세요.'); return; }
-  const aoa=[['판정','날짜','부서','카드','가맹점/거래처','카드금액','원장금액','차액']];
-  _lcRows.forEach(r=>aoa.push([r.type,r.date||'',r.dept||'',r.last4||'',r.merchant||r.partner||'',r.tx_amount||0,r.entry_amount||0,r.diff||0]));
+  const deptF=document.getElementById('lc-dept-filter').value;
+  const month=document.getElementById('lc-month-filter').value;
+  const rows=_lcRows
+    .filter(r=>!deptF||(r.dept||'')===deptF)
+    .map(r=>({...r,isDone:!!_lcProcessed[r.row_key],proc:_lcProcessed[r.row_key]}))
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+
+  const header=['판정','날짜','부서','카드(끝4자리)','가맹점','원장 거래처','카드금액','원장금액','차액','대조 기준','처리상태','비고','처리일시'];
+  const toRow=r=>[
+    r.type, r.date||'', r.dept||'', r.last4||'', r.merchant||'', r.partner||'',
+    r.tx_amount??'', r.entry_amount??'', r.type==='일치'?0:(r.diff||0),
+    r.via==='gowid'?'고위드':'카드사 승인내역',
+    r.isDone?'처리됨':(r.type==='일치'?'-':'미처리'),
+    r.proc?.memo||'', r.proc?.processed_at||''
+  ];
+  const widths=[{wch:9},{wch:12},{wch:14},{wch:12},{wch:30},{wch:26},{wch:12},{wch:12},{wch:12},{wch:14},{wch:10},{wch:24},{wch:20}];
+  const makeSheet=list=>{
+    const ws=XLSX.utils.aoa_to_sheet([header,...list.map(toRow)]);
+    ws['!cols']=widths;
+    ws['!freeze']={xSplit:0,ySplit:1};
+    return ws;
+  };
+  const sum=list=>({n:list.length,card:list.reduce((s,r)=>s+(r.tx_amount||0),0),led:list.reduce((s,r)=>s+(r.entry_amount||0),0)});
+
+  const active=rows.filter(r=>!r.isDone);
+  const groups=[
+    ['일치',active.filter(r=>r.type==='일치')],
+    ['누락',active.filter(r=>r.type==='누락')],
+    ['원장초과',active.filter(r=>r.type==='원장초과')],
+    ['금액차이',active.filter(r=>r.type==='금액차이')],
+    ['처리됨',rows.filter(r=>r.isDone)]
+  ];
+
+  const summary=[
+    ['대조현황 요약'],
+    ['조회 기간',month||'전체 기간'],
+    ['부서 필터',deptF||'전체 부서'],
+    ['출력 일시',new Date().toLocaleString('ko-KR')],
+    [],
+    ['구분','건수','카드금액 합계','원장금액 합계','차액(카드-원장)']
+  ];
+  groups.forEach(([name,list])=>{ const s=sum(list); summary.push([name,s.n,s.card,s.led,s.card-s.led]); });
+  const wsSum=XLSX.utils.aoa_to_sheet(summary);
+  wsSum['!cols']=[{wch:14},{wch:14},{wch:16},{wch:16},{wch:18}];
+
+  // 전표 처리용: 같은 판정·카드·가맹점을 묶은 시트 (일치 제외)
+  const gHeader=['판정','카드(끝4자리)','가맹점/거래처','건수','최초일','최종일','카드금액 합','원장금액 합','차액 합(카드-원장)','처리상태','비고'];
+  const gRows=lcBuildGroups(rows.filter(r=>r.type!=='일치')).map(g=>[
+    g.type,g.last4,g.name,g.count,g.from,g.to,g.card,g.led,g.card-g.led,
+    g.isDone?'처리됨':'미처리',
+    [...new Set(g.rows.map(r=>r.proc?.memo).filter(Boolean))].join(' / ')
+  ]);
+  const wsGroup=XLSX.utils.aoa_to_sheet([gHeader,...gRows]);
+  wsGroup['!cols']=[{wch:9},{wch:12},{wch:34},{wch:7},{wch:12},{wch:12},{wch:14},{wch:14},{wch:18},{wch:10},{wch:30}];
+
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'대조현황');
-  XLSX.writeFile(wb,`대조현황_${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.utils.book_append_sheet(wb,wsSum,'요약');
+  XLSX.utils.book_append_sheet(wb,wsGroup,'묶음(가맹점·카드)');
+  groups.forEach(([name,list])=>XLSX.utils.book_append_sheet(wb,makeSheet(list),`${name}(${list.length})`));
+  XLSX.writeFile(wb,`대조현황_${month||'전체'}_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 function renderLc(){
   const typeStyle={'누락':'background:#fee2e2;color:#991b1b','원장초과':'background:#dbeafe;color:#1e40af','금액차이':'background:#fef3c7;color:#92400e','일치':'background:#dcfce7;color:#166534'};
@@ -2593,6 +2657,20 @@ function renderLc(){
   const tbody=document.getElementById('lc-tbody');
   _lcViewRows=rows; // 일괄 선택/처리에서 화면 행을 인덱스로 참조 (거래처명에 따옴표가 있어도 안전)
   const allChk=document.getElementById('lc-check-all'); if(allChk) allChk.checked=false;
+
+  // 묶어보기 모드: 같은 판정·카드·가맹점을 한 줄로 묶어서 표시
+  const rowWrap=document.getElementById('lc-row-wrap'), groupWrap=document.getElementById('lc-group-wrap');
+  const toggleBtn=document.getElementById('lc-group-toggle');
+  if(toggleBtn){ toggleBtn.classList.toggle('btn-primary',_lcGroupMode); toggleBtn.textContent=_lcGroupMode?'🧩 묶어보기 끄기':'🧩 가맹점·카드별 묶어보기'; }
+  if(_lcGroupMode){
+    rowWrap.style.display='none'; groupWrap.style.display='';
+    tbody.innerHTML='';
+    renderLcGroups(rows,typeStyle);
+    lcUpdateBulkBar();
+    return;
+  }
+  rowWrap.style.display=''; groupWrap.style.display='none';
+  document.getElementById('lc-group-tbody').innerHTML='';
   if(!rows.length){ tbody.innerHTML='<tr><td colspan="11" class="empty">해당 항목 없음</td></tr>'; lcUpdateBulkBar(); return; }
   tbody.innerHTML=rows.map((r,i)=>{
     const doneBtn=r.type!=='일치'?`<button class="btn btn-sm" onclick="toggleLcProcessedIdx(${i})">${r.isDone?'처리취소':'처리'}</button>`:'';
@@ -2617,27 +2695,100 @@ function renderLc(){
 
 // ===== 대조현황 일괄 선택/처리 =====
 let _lcViewRows=[];
+let _lcViewGroups=[];
+let _lcGroupMode=false;
+function lcToggleGroupMode(){ _lcGroupMode=!_lcGroupMode; renderLc(); }
+
+// 같은 판정 · 같은 카드(끝4자리) · 같은 가맹점(원장초과는 원장 거래처)을 한 묶음으로
+function lcBuildGroups(rows){
+  const map=new Map();
+  rows.forEach(r=>{
+    const name=String(r.merchant||r.partner||'(미상)').replace(/\s+/g,' ').trim();
+    const key=`${r.type}|${r.last4||''}|${name}|${r.isDone?1:0}`;
+    if(!map.has(key)) map.set(key,{type:r.type,last4:r.last4||'',name,isDone:!!r.isDone,rows:[]});
+    map.get(key).rows.push(r);
+  });
+  return [...map.values()].map(g=>{
+    const dates=g.rows.map(r=>r.date).filter(Boolean).sort();
+    return {...g,count:g.rows.length,from:dates[0]||'',to:dates[dates.length-1]||'',
+      card:g.rows.reduce((s,r)=>s+(r.tx_amount||0),0),
+      led:g.rows.reduce((s,r)=>s+(r.entry_amount||0),0),
+      viaGowid:g.rows.some(r=>r.via==='gowid')};
+  }).sort((a,b)=>(a.last4||'').localeCompare(b.last4||'')||a.name.localeCompare(b.name)||a.type.localeCompare(b.type));
+}
+function renderLcGroups(rows,typeStyle){
+  const tbody=document.getElementById('lc-group-tbody');
+  _lcViewGroups=lcBuildGroups(rows);
+  if(!_lcViewGroups.length){ tbody.innerHTML='<tr><td colspan="10" class="empty">해당 항목 없음</td></tr>'; return; }
+  tbody.innerHTML=_lcViewGroups.map((g,i)=>{
+    const diff=g.card-g.led;
+    const chk=g.type!=='일치'?`<input type="checkbox" class="lc-gcheck" data-g="${i}" onchange="lcUpdateBulkBar()">`:'';
+    const act=g.type!=='일치'?`<button class="btn btn-sm" onclick="lcProcessGroupIdx(${i})">${g.isDone?'묶음 처리취소':'묶음 처리'}</button> `:'';
+    const detail=g.rows.map(r=>`<tr>
+        <td style="white-space:nowrap">${r.date||''}</td><td>${r.merchant||r.partner||''}</td>
+        <td style="text-align:right">${fmt(r.tx_amount)}</td><td style="text-align:right">${fmt(r.entry_amount)}</td>
+        <td style="text-align:right">${r.type==='일치'?'0':fmt(r.diff)}</td><td style="font-size:12px;color:var(--text2)">${(r.proc?.memo||'')}</td></tr>`).join('');
+    return `<tr>
+      <td>${chk}</td>
+      <td><span class="badge" style="${typeStyle[g.type]||''}">${g.type}</span></td>
+      <td>${g.last4||'—'}</td>
+      <td>${g.name}${g.viaGowid?' <span class="badge" style="background:var(--primary-light);color:var(--primary)">고위드</span>':''}</td>
+      <td style="text-align:right;font-weight:700">${g.count}건</td>
+      <td style="white-space:nowrap;font-size:12px">${g.from===g.to?g.from:`${g.from} ~ ${g.to}`}</td>
+      <td style="text-align:right">${fmt(g.card)}</td>
+      <td style="text-align:right">${fmt(g.led)}</td>
+      <td style="text-align:right;color:${g.type==='일치'?'inherit':diff>0?'var(--danger)':diff<0?'#3B82F6':'inherit'}">${g.type==='일치'?'0':fmt(diff)}</td>
+      <td style="white-space:nowrap">${act}<button class="btn btn-sm" onclick="var d=document.getElementById('lc-gd-${i}');d.style.display=d.style.display==='none'?'':'none'">상세</button></td>
+    </tr>
+    <tr id="lc-gd-${i}" style="display:none"><td></td><td colspan="9" style="background:var(--bg)">
+      <table style="width:100%"><thead><tr><th>날짜</th><th>가맹점/거래처</th><th style="text-align:right">카드금액</th><th style="text-align:right">원장금액</th><th style="text-align:right">차액</th><th>비고</th></tr></thead><tbody>${detail}</tbody></table>
+    </td></tr>`;
+  }).join('');
+}
+async function lcProcessGroupIdx(i){
+  const g=_lcViewGroups[i]; if(!g) return;
+  const doProcess=!g.isDone;
+  let memo='';
+  if(doProcess){
+    const m=prompt(`"${g.name}" (카드 ${g.last4||'—'}) ${g.count}건을 한 번에 처리합니다.\n공통 비고를 입력하세요 (예: 전표처리 완료)`,'');
+    if(m===null) return;
+    memo=m.trim();
+  }
+  await lcBulkProcessWeb(doProcess,g.rows,memo);
+}
+
 function lcUpdateBulkBar(){
-  const checks=[...document.querySelectorAll('.lc-check')];
-  const n=checks.filter(c=>c.checked).length;
+  let n=0, units=0, total=0;
+  if(_lcGroupMode){
+    const checks=[...document.querySelectorAll('.lc-gcheck')];
+    const on=checks.filter(c=>c.checked);
+    units=on.length; total=checks.length;
+    on.forEach(c=>{ const g=_lcViewGroups[+c.dataset.g]; if(g) n+=g.rows.length; });
+  } else {
+    const checks=[...document.querySelectorAll('.lc-check')];
+    n=checks.filter(c=>c.checked).length; units=n; total=checks.length;
+  }
   const bar=document.getElementById('lc-bulk-bar');
-  if(bar) bar.style.display=n?'flex':'none';
+  if(bar) bar.style.display=units?'flex':'none';
   const cnt=document.getElementById('lc-bulk-count');
-  if(cnt) cnt.textContent=`${n}건 선택됨`;
+  if(cnt) cnt.textContent=_lcGroupMode?`${units}묶음 · ${n}건 선택됨`:`${n}건 선택됨`;
   const allChk=document.getElementById('lc-check-all');
-  if(allChk) allChk.checked=checks.length>0&&n===checks.length;
+  if(allChk) allChk.checked=total>0&&units===total;
 }
 function lcToggleAllWeb(checked){
-  document.querySelectorAll('.lc-check').forEach(c=>{ c.checked=checked; });
+  document.querySelectorAll('.lc-check,.lc-gcheck').forEach(c=>{ c.checked=checked; });
   lcUpdateBulkBar();
 }
 function _lcSelectedRows(){
+  if(_lcGroupMode){
+    return [...document.querySelectorAll('.lc-gcheck:checked')].flatMap(c=>{ const g=_lcViewGroups[+c.dataset.g]; return g?g.rows:[]; });
+  }
   return [...document.querySelectorAll('.lc-check:checked')].map(c=>_lcViewRows[+c.dataset.i]).filter(Boolean);
 }
-async function lcBulkProcessWeb(doProcess){
-  const rows=_lcSelectedRows().filter(r=>doProcess?!r.isDone:r.isDone);
+async function lcBulkProcessWeb(doProcess,rowsOverride,memoOverride){
+  const rows=(rowsOverride||_lcSelectedRows()).filter(r=>doProcess?!r.isDone:r.isDone);
   if(!rows.length){ alert(doProcess?'처리할 항목이 없습니다. (이미 처리된 항목은 제외됩니다)':'처리취소할 항목이 없습니다.'); return; }
-  const memo=(document.getElementById('lc-bulk-memo').value||'').trim();
+  const memo=memoOverride!==undefined?memoOverride:(document.getElementById('lc-bulk-memo').value||'').trim();
   if(!confirm(`선택한 ${rows.length}건을 ${doProcess?'처리':'처리취소'}하시겠습니까?${doProcess&&memo?`\n공통 비고: ${memo}`:''}\n(공유 서버의 모든 사용자에게 반영됩니다)`)) return;
   const btns=document.querySelectorAll('#lc-bulk-bar button'); btns.forEach(b=>b.disabled=true);
   try{
