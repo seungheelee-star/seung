@@ -895,7 +895,12 @@ function localDateStrW(d){ if(isNaN(d)) return ''; const y=d.getFullYear(),m=Str
 function excelDateToStrW(v){
   if(v===''||v===undefined||v===null) return '';
   if(v instanceof Date) return localDateStrW(v);
-  if(typeof v==='number'&&v>10000){ const d=new Date(Math.round((v-25569)*86400*1000)); return localDateStrW(d); }
+  // 20261031 처럼 숫자로 붙은 yyyymmdd 는 엑셀 일련번호(최대 7만대)가 아니므로 날짜 문자열로 처리
+  if(typeof v==='number'&&v>=19000101&&v<=21001231){
+    const s8=String(Math.round(v));
+    return `${s8.slice(0,4)}-${s8.slice(4,6)}-${s8.slice(6,8)}`;
+  }
+  if(typeof v==='number'&&v>10000&&v<2958466){ const d=new Date(Math.round((v-25569)*86400*1000)); return localDateStrW(d); }
   const s=String(v).trim();
   const m1=s.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
   if(m1) return `${m1[1]}-${m1[2].padStart(2,'0')}-${m1[3].padStart(2,'0')}`;
@@ -978,7 +983,7 @@ async function handleUploadWeb(event,type){
     else if(type==='card_all') result=await parseCardAllW(wb,batchId);
     else if(type==='ledger') result=await parseLedgerW(wb,file.name,batchId);
     else if(type==='wihago') result=await parseWihagoW(wb,batchId);
-    resEl.innerHTML=`✅ ${result.count}건 반영 완료`;
+    resEl.innerHTML=`✅ ${result.count}건 반영 완료${result.skipped?` <span style="color:var(--warning)">(날짜나 금액이 없어 건너뛴 행 ${result.skipped}건)</span>`:''}`;
     await sb.from('upload_history_shared').insert([{
       id:batchId,table_name:UPLOAD_TABLE_MAP[type],batch_id:batchId,
       fname:file.name,upload_type:UPLOAD_TYPE_LABEL[type]||type,count:result.count
@@ -1031,35 +1036,54 @@ async function deleteUploadBatchWeb(historyId,tableName,batchId,count){
 async function parseLotteW(wb,batchId){
   const ws=wb.Sheets[wb.SheetNames[0]];
   const rawArr=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
-  const {headerIdx}=detectHeaderRow(rawArr,['카드번호','매입일자','매입시간','가맹점명','매입금액','승인번호']);
+  // 카드사 원본(매입일자/매입금액/승인번호) 뿐 아니라 수기 전표 양식(거래일자/거래처(가맹점명)/합계)도 인식
+  const {headerIdx}=detectHeaderRow(rawArr,['카드번호','매입일자','매입시간','가맹점명','매입금액','승인번호','거래일자','합계']);
   const {headers,rows}=sheetToRowsW(rawArr,headerIdx);
   const {data:cards}=await sb.from('cards_shared').select('*').eq('issuer','롯데');
+  const defaultCard=(cards||[])[0]||null; // 카드번호 열이 없는 수기 양식은 롯데 카드(등록된 첫 카드)로 처리
   const payload=[];
+  const seen={}; // 같은 날·같은 가맹점·같은 금액이 여러 건이어도 재업로드 때 같은 ID가 나오도록 순번을 붙임
+  let skipped=0;
   rows.forEach(row=>{
     const rawCardNo=String(getColW(row,headers,'카드번호')||'').replace(/\D/g,'');
-    const last4=rawCardNo.length>=4?rawCardNo.slice(-4):'';
-    const cardMatch=(cards||[]).find(c=>c.last4===last4)||(cards||[])[0];
+    let last4=rawCardNo.length>=4?rawCardNo.slice(-4):'';
+    if(!last4&&defaultCard) last4=defaultCard.last4||'';
+    const cardMatch=(cards||[]).find(c=>c.last4===last4)||defaultCard;
     const rawDate=getColW(row,headers,'매입일자','승인일자','거래일자','승인일');
     const dateStr=excelDateToStrW(rawDate);
-    if(!dateStr) return;
+    const yr=parseInt((dateStr||'').slice(0,4));
+    const amt=parseAmtW(getColW(row,headers,'매입금액','승인금액(원화)','승인금액','청구금액','원화금액','합계','이용금액','결제금액'));
+    if(!dateStr||!(yr>=2000&&yr<=2100)||!amt){ skipped++; return; } // 날짜/금액이 없거나 비정상인 행은 저장하지 않음
     const timeVal=getColW(row,headers,'매입시간','승인시간');
-    const amt=parseAmtW(getColW(row,headers,'매입금액','승인금액(원화)','승인금액','청구금액','원화금액'));
     const approvalNo=String(getColW(row,headers,'승인번호')||'').trim();
-    const id='lotte_'+(approvalNo?approvalNo:`${last4}_${dateStr}_${amt}_${Math.random().toString(36).slice(2,6)}`);
+    const merchant=String(getColW(row,headers,'가맹점명','상호명','점포명')||'').trim();
+    let id;
+    if(approvalNo) id='lotte_'+approvalNo;
+    else{
+      const key=`${last4}_${dateStr}_${amt}_${merchant}`.replace(/\s+/g,'');
+      seen[key]=(seen[key]||0)+1;
+      id=`lotte_${key}_${seen[key]}`;
+    }
     payload.push({
       id, source:'upload', card_name:cardMatch?cardMatch.name:`롯데 ${last4}`, last4,
       date:dateStr, datetime:`${dateStr}T${parseTimeW(timeVal)}`,
-      merchant:String(getColW(row,headers,'가맹점명','상호명','점포명')||'').trim(),
-      amount:amt, category:String(getColW(row,headers,'가맹점업종','업종명','업종')||'').trim(), memo:'', batch_id:batchId,
+      merchant,
+      amount:amt, category:String(getColW(row,headers,'가맹점업종','업종명','업종')||'').trim(),
+      memo:String(getColW(row,headers,'품명')||'').trim(),
+      biz_no:String(getColW(row,headers,'사업자번호','가맹점사업자번호','사업자등록번호')||'').replace(/[^0-9]/g,''),
+      batch_id:batchId,
       is_foreign:String(getColW(row,headers,'국내외사용구분','사용구분')||'').includes('해외')
     });
   });
+  if(!payload.length){
+    throw new Error(`읽을 수 있는 거래가 없습니다. 인식한 열: ${headers.filter(Boolean).join(', ')||'(없음)'} — 날짜(거래일자/매입일자)와 금액(합계/매입금액) 열이 필요해요.`);
+  }
   const dedupedPayload=dedupeByIdW(payload);
   for(let i=0;i<dedupedPayload.length;i+=500){
     const {error}=await sb.from('tx_shared').upsert(dedupedPayload.slice(i,i+500),{onConflict:'id'});
     if(error) throw error;
   }
-  return {count:dedupedPayload.length};
+  return {count:dedupedPayload.length,skipped};
 }
 
 async function parseShinhanW(wb,batchId){
