@@ -2910,7 +2910,35 @@ async function loadLb(){
   _lbData={};
   (data||[]).forEach(d=>{ if(!_lbData[d.team]) _lbData[d.team]={}; _lbData[d.team][d.month]=d; });
   LB_TEAMS=lbGetTeamsWeb();
+  await loadLbAuto();
   renderLb();
+}
+// 위하고(wihago_shared)의 '리더활동비' 승인 내역을 팀·월별로 합산 (업로드하면 자동 반영)
+const LB_DEPT_MAP_WEB={'사업부':'사업부','사업개발챕터':'사업부','마케팅챕터':'마케팅챕터','크리에이티브챕터':'브랜드디자인챕터','브랜드디자인챕터':'브랜드디자인챕터','PBO':'PBO','HR채용':'PBO','BM챕터':'BM챕터'};
+// 이 월(포함) 이전의 expenses_manual 은 로컬 대시보드가 (수동+위하고)를 합쳐 저장한 값이므로 합계로 간주
+const LB_LEGACY_COMBINED_UNTIL='2026-08';
+let _lbAuto={};
+async function loadLbAuto(){
+  let rows=[];
+  for(let o=0;;o+=1000){
+    const {data,error}=await sb.from('wihago_shared').select('id,user_name,dept,content,category,partner,month,date,amount,status').like('category','%리더활동비%').order('id').range(o,o+999);
+    if(error){ console.warn('위하고 조회 실패',error.message); break; }
+    rows.push(...(data||[]));
+    if(!data||data.length<1000) break;
+  }
+  // 로컬 푸시(wh+숫자)와 웹 업로드(wh_)가 같은 내용으로 이중 저장된 경우 웹 업로드분만 사용
+  const ck=r=>[r.user_name,r.dept,r.content,r.category,r.partner,r.month,r.date,r.amount,r.status].join('|');
+  const webKeys=new Set(rows.filter(r=>String(r.id).startsWith('wh_')).map(ck));
+  rows=rows.filter(r=>!(/^wh\d/.test(String(r.id))&&webKeys.has(ck(r))));
+  _lbAuto={};
+  rows.forEach(r=>{
+    if(r.status&&r.status!=='승인') return;
+    const team=LB_DEPT_MAP_WEB[String(r.dept||'').trim()];
+    const m=String(r.month||'').match(/(\d{4})\.(\d{2})/);
+    if(!team||!m) return;
+    const mo=`${m[1]}-${m[2]}`;
+    (_lbAuto[team]=_lbAuto[team]||{})[mo]=((_lbAuto[team]||{})[mo]||0)+(r.amount||0);
+  });
 }
 function lbMonths(){
   const year=document.getElementById('lb-year').value;
@@ -2970,9 +2998,11 @@ function lbCalc(){
         budget=hc*bpp;
       }
       const carry=(!newQuarter&&prevZan>0)?prevZan:0;
-      const used=rec.expenses_manual||0;
+      const manual=rec.expenses_manual||0;
+      const auto=((_lbAuto[team]||{})[mo])||0;
+      const used=mo<=LB_LEGACY_COMBINED_UNTIL?Math.max(manual,auto):manual+auto;
       const zan=budget+carry-used;
-      result[team][mo]={hc,budget,carry,used,roster,zan};
+      result[team][mo]={hc,budget,carry,used,manual,auto,roster,zan};
       prevZan=zan;
     });
   });
@@ -3012,7 +3042,9 @@ function renderLb(){
       {key:'roster',label:'구성원 명단',edit:'roster',textarea:true,color:'#fafafa',textColor:'var(--text)'}
     ],
     '사용액입력':[
-      {key:'used',label:'사용액(원)',edit:'expenses_manual',color:'#fff',textColor:'var(--text)'}
+      {key:'auto',label:'위하고 자동반영',color:'#f0f9ff',textColor:'#0369a1'},
+      {key:'manual',label:'수동입력(원)',edit:'expenses_manual',color:'#fff',textColor:'var(--text)'},
+      {key:'used',label:'사용액 합계',color:'#f8fafc',textColor:'var(--text)',bold:true}
     ],
     '월별정산':[
       {key:'hc',label:'인원(명)',color:'#f8fafc',textColor:'var(--text2)'},
